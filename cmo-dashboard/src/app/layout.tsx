@@ -15,8 +15,8 @@ import "./globals.css";
  * unconditional <link>, which would outrank these and pin one mark for everybody.
  */
 export const metadata: Metadata = {
-  title: "CMO Dashboard",
-  description: "The week, the clients, the SOPs and the logins in one place",
+  title: "Internal dashboards",
+  description: "Every LVRGD internal dashboard, behind one owner hub",
   // Kept out of search results. The login wall is the control; this is tidiness.
   robots: { index: false, follow: false },
   icons: {

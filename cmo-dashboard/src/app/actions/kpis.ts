@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
-import { requireEditor } from "@/lib/access";
+import { requireDashboardWrite } from "@/lib/access";
 import { prisma } from "@/lib/db";
 import { isTileColor, TILE_COLORS } from "@/lib/options";
 
@@ -20,24 +20,29 @@ const kpiSchema = z.object({
     .catch(TILE_COLORS[0].value),
 });
 
-export async function createKpi(formData: FormData) {
-  await requireEditor();
-
-  const parsed = kpiSchema.safeParse({
+const readKpi = (formData: FormData) =>
+  kpiSchema.safeParse({
     label: formData.get("label") ?? "",
     value: formData.get("value") ?? "",
     sublabel: formData.get("sublabel") ?? "",
     color: formData.get("color") ?? "",
   });
+
+export async function createKpi(dashboardSlug: string, formData: FormData) {
+  const { dashboard } = await requireDashboardWrite(dashboardSlug);
+
+  const parsed = readKpi(formData);
   if (!parsed.success) return;
 
   const last = await prisma.kpi.findFirst({
+    where: { dashboardId: dashboard.id },
     orderBy: { position: "desc" },
     select: { position: true },
   });
 
   await prisma.kpi.create({
     data: {
+      dashboardId: dashboard.id,
       label: parsed.data.label,
       value: parsed.data.value || "—",
       sublabel: parsed.data.sublabel || null,
@@ -46,25 +51,23 @@ export async function createKpi(formData: FormData) {
     },
   });
 
-  revalidatePath("/");
+  revalidatePath(`/d/${dashboardSlug}`);
 }
 
-export async function updateKpi(formData: FormData) {
-  await requireEditor();
+export async function updateKpi(dashboardSlug: string, formData: FormData) {
+  const { dashboard } = await requireDashboardWrite(dashboardSlug);
 
-  const id = String(formData.get("id") ?? "");
-  if (!id) return;
-
-  const parsed = kpiSchema.safeParse({
-    label: formData.get("label") ?? "",
-    value: formData.get("value") ?? "",
-    sublabel: formData.get("sublabel") ?? "",
-    color: formData.get("color") ?? "",
+  const existing = await prisma.kpi.findFirst({
+    where: { id: String(formData.get("id") ?? ""), dashboardId: dashboard.id },
+    select: { id: true },
   });
+  if (!existing) return;
+
+  const parsed = readKpi(formData);
   if (!parsed.success) return;
 
   await prisma.kpi.update({
-    where: { id },
+    where: { id: existing.id },
     data: {
       label: parsed.data.label,
       value: parsed.data.value || "—",
@@ -73,15 +76,18 @@ export async function updateKpi(formData: FormData) {
     },
   });
 
-  revalidatePath("/");
+  revalidatePath(`/d/${dashboardSlug}`);
 }
 
-export async function deleteKpi(formData: FormData) {
-  await requireEditor();
+export async function deleteKpi(dashboardSlug: string, formData: FormData) {
+  const { dashboard } = await requireDashboardWrite(dashboardSlug);
 
-  const id = String(formData.get("id") ?? "");
-  if (!id) return;
+  const existing = await prisma.kpi.findFirst({
+    where: { id: String(formData.get("id") ?? ""), dashboardId: dashboard.id },
+    select: { id: true },
+  });
+  if (!existing) return;
 
-  await prisma.kpi.delete({ where: { id } });
-  revalidatePath("/");
+  await prisma.kpi.delete({ where: { id: existing.id } });
+  revalidatePath(`/d/${dashboardSlug}`);
 }

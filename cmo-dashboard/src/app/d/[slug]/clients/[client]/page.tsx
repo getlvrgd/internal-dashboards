@@ -3,11 +3,11 @@ import { notFound } from "next/navigation";
 
 import { deleteClient } from "@/app/actions/clients";
 import { ClientForm } from "@/components/ClientForm";
+import { CredentialsPanel } from "@/components/CredentialsPanel";
 import { DangerButton } from "@/components/DangerButton";
 import { Nav } from "@/components/Nav";
 import { Chip, Dot, EmptyNote, ghostButtonClass } from "@/components/ui";
-import { requireSession } from "@/lib/access";
-import { sessionCanEdit, sessionCanSeeCredentials } from "@/lib/auth";
+import { resolveClient } from "@/lib/access";
 import { prisma } from "@/lib/db";
 import { readQuickLinks, safeHref } from "@/lib/links";
 import {
@@ -24,37 +24,40 @@ export const dynamic = "force-dynamic";
 export default async function ClientPage({
   params,
 }: {
-  params: Promise<{ slug: string }>;
+  params: Promise<{ slug: string; client: string }>;
 }) {
-  const session = await requireSession();
-  const editable = sessionCanEdit(session);
-  const canSeeLogins = sessionCanSeeCredentials(session);
-  const { slug } = await params;
+  const { slug, client: clientSlug } = await params;
+  const context = await resolveClient(slug, clientSlug);
+  const { dashboard, session, client } = context;
+  const editable = context.canEdit;
+  const canSeeLogins = context.canSeeCredentials;
 
-  const client = await prisma.client.findUnique({
-    where: { slug },
-    include: {
-      tasks: {
-        where: { status: { not: TASK_STATUS.DONE } },
-        orderBy: [{ weekOf: "asc" }, { day: "asc" }, { position: "asc" }],
-        include: { assignee: { select: { name: true } } },
-      },
-      // Counted, never listed here — the values live behind the vault's own guard.
-      _count: { select: { credentials: true } },
-    },
-  });
-  if (!client) notFound();
+  const [tasks, credentials] = await Promise.all([
+    prisma.task.findMany({
+      where: { clientId: client.id, status: { not: TASK_STATUS.DONE } },
+      orderBy: [{ weekOf: "asc" }, { day: "asc" }, { position: "asc" }],
+      include: { assignee: { select: { name: true } } },
+    }),
+    // Only fetched for someone who may open them. The cipher text comes back so a row
+    // can say whether a password exists; nothing here decrypts it.
+    canSeeLogins
+      ? prisma.credential.findMany({
+          where: { clientId: client.id },
+          orderBy: [{ position: "asc" }, { createdAt: "asc" }],
+        })
+      : Promise.resolve([]),
+  ]);
 
   const links = readQuickLinks(client.links);
   const tinted = isTileColor(client.color);
 
   return (
     <>
-      <Nav session={session} />
+      <Nav session={session} dashboard={dashboard} context={context} />
 
       <main className="mx-auto w-full max-w-4xl flex-1 px-5 py-6">
         <Link
-          href="/clients"
+          href={`/d/${slug}/clients`}
           className="text-[13px] font-semibold text-ink-muted transition-colors hover:text-ink"
         >
           ‹ Clients
@@ -133,15 +136,15 @@ export default async function ClientPage({
             <h2 className="mb-2 text-[15px] font-bold tracking-tight">
               Open work
               <span className="ml-2 text-[13px] font-semibold text-ink-muted tabular">
-                {client.tasks.length}
+                {tasks.length}
               </span>
             </h2>
 
-            {client.tasks.length === 0 ? (
+            {tasks.length === 0 ? (
               <EmptyNote>Nothing outstanding.</EmptyNote>
             ) : (
               <ul className="overflow-hidden rounded-xl border border-subtle bg-surface">
-                {client.tasks.map((task) => (
+                {tasks.map((task) => (
                   <li
                     key={task.id}
                     className="flex items-center gap-2 border-t border-subtle px-3 py-2 text-[13px] first:border-t-0"
@@ -163,20 +166,13 @@ export default async function ClientPage({
           </section>
 
           {canSeeLogins && (
-            <section>
-              <h2 className="mb-2 text-[15px] font-bold tracking-tight">Logins</h2>
-              <p className="text-[13px] text-ink-secondary">
-                {client._count.credentials === 0
-                  ? "No logins saved for this client."
-                  : `${client._count.credentials} saved.`}{" "}
-                <Link
-                  href={`/logins?client=${client.id}`}
-                  className="font-semibold text-accent underline-offset-2 hover:underline"
-                >
-                  Open the vault
-                </Link>
-              </p>
-            </section>
+            <CredentialsPanel
+              credentials={credentials}
+              clientId={client.id}
+              clientName={client.name}
+              dashboardSlug={slug}
+              editable={editable}
+            />
           )}
 
           {client.notes && (
@@ -207,9 +203,10 @@ export default async function ClientPage({
                     notes: client.notes,
                     links,
                   }}
+                  dashboardSlug={slug}
                 />
 
-                <form action={deleteClient}>
+                <form action={deleteClient.bind(null, slug)}>
                   <input type="hidden" name="id" value={client.id} />
                   <DangerButton
                     confirm={`Delete ${client.name}? Their saved logins go too. Tasks are kept but lose the client.`}

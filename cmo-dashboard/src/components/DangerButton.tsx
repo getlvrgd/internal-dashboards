@@ -12,14 +12,18 @@ export function DangerButton({
   confirm,
   children,
   className = "",
+  formAction,
 }: {
   confirm: string;
   children: React.ReactNode;
   className?: string;
+  /** Lets one form carry a destructive submit alongside its ordinary Save. */
+  formAction?: (formData: FormData) => void | Promise<void>;
 }) {
   return (
     <button
       type="submit"
+      formAction={formAction}
       onClick={(event) => {
         if (!window.confirm(confirm)) event.preventDefault();
       }}

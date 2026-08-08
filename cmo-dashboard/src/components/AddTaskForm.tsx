@@ -23,6 +23,7 @@ export function AddTaskForm({
   people,
   defaultClientId,
   defaultAssigneeId,
+  dashboardSlug,
 }: {
   day: number | null;
   week: string;
@@ -30,6 +31,7 @@ export function AddTaskForm({
   people: RowOption[];
   defaultClientId?: string;
   defaultAssigneeId?: string;
+  dashboardSlug: string;
 }) {
   const formRef = useRef<HTMLFormElement>(null);
   const titleRef = useRef<HTMLInputElement>(null);
@@ -44,7 +46,7 @@ export function AddTaskForm({
         // reads as though the submit did not take.
         formRef.current?.reset();
         startTransition(async () => {
-          await createTask(formData);
+          await createTask(dashboardSlug, formData);
           titleRef.current?.focus();
         });
       }}

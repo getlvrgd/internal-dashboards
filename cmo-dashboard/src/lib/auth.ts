@@ -5,17 +5,19 @@ import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
 
 import { prisma } from "./db";
-import {
-  canEdit,
-  canSeeCredentials,
-  hasAdminAccess,
-  ROLES,
-  type Role,
-} from "./options";
+import { canEdit, hasAdminAccess, ROLES, type Role } from "./options";
 
-const COOKIE = "cmo_session";
+const COOKIE = "dashboards_session";
 const MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
 
+/**
+ * What the cookie carries.
+ *
+ * Deliberately only the platform role. Which dashboards this person may open is NOT in
+ * the token: it is read from Membership on every request. A token lives thirty days, so
+ * baking access into it would mean revoking a grant did nothing until the session
+ * expired — see resolveDashboard() in src/lib/access.ts.
+ */
 export type Session = {
   userId: string;
   name: string;
@@ -25,8 +27,6 @@ export type Session = {
 export const isAdmin = (session: Session) => hasAdminAccess(session.role);
 export const isOwner = (session: Session) => session.role === ROLES.OWNER;
 export const sessionCanEdit = (session: Session) => canEdit(session.role);
-export const sessionCanSeeCredentials = (session: Session) =>
-  canSeeCredentials(session.role);
 
 function secret() {
   const value = process.env.AUTH_SECRET;

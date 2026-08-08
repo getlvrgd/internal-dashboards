@@ -26,9 +26,11 @@ export type KpiData = {
 export function KpiBoard({
   kpis,
   editable,
+  dashboardSlug,
 }: {
   kpis: KpiData[];
   editable: boolean;
+  dashboardSlug: string;
 }) {
   if (kpis.length === 0 && !editable) return null;
 
@@ -59,7 +61,7 @@ export function KpiBoard({
             {kpis.map((kpi) => (
               <form
                 key={kpi.id}
-                action={updateKpi}
+                action={updateKpi.bind(null, dashboardSlug)}
                 className="flex flex-wrap items-center gap-2 rounded-lg border border-subtle bg-surface p-2"
               >
                 <input type="hidden" name="id" value={kpi.id} />
@@ -89,7 +91,7 @@ export function KpiBoard({
                 </button>
                 <button
                   type="submit"
-                  formAction={deleteKpi}
+                  formAction={deleteKpi.bind(null, dashboardSlug)}
                   aria-label={`Delete ${kpi.label}`}
                   className="rounded-lg px-2 py-1 text-[12px] font-semibold text-ink-muted transition-colors hover:text-critical"
                 >
@@ -99,7 +101,7 @@ export function KpiBoard({
             ))}
 
             <form
-              action={createKpi}
+              action={createKpi.bind(null, dashboardSlug)}
               className="flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-subtle p-2"
             >
               <input

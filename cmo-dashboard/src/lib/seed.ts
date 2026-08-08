@@ -1,55 +1,17 @@
 import "server-only";
 
 import { prisma } from "./db";
+import { DASHBOARD_STATUS, slugify, uniqueSlug } from "./options";
+import { parseSopContent, starterSopContent, type SopContent } from "./sops";
 
 /**
- * The scaffolding a brand-new dashboard starts with.
- *
- * Run once, by first-run setup. Every step is a no-op if rows already exist, so calling
- * it twice cannot double anything up.
+ * What a new dashboard is created with.
  *
  * Note what is deliberately NOT here: no passwords, no email addresses, no account
- * values of any kind. The vault is seeded with the *shape* of the old board — the
- * services that need a login, including the domain and hosting accounts — and each row
- * is left blank for someone to fill in through the UI, where it is encrypted on the way
- * to the database. Copying credentials in as source code would defeat the encryption
- * entirely, since they would then live in the repository forever.
+ * values of any kind. Logins now live under a client, and a brand-new dashboard has no
+ * clients — so there is nothing to seed and nothing that could put a credential into
+ * source control, where it would sit forever and defeat the encryption entirely.
  */
-
-/** Mirrors the tabs on the board this replaces, in the same order. */
-const SOP_CATEGORIES = [
-  "Ads",
-  "YouTube",
-  "Instagram",
-  "VSL Funnel",
-  "Calls",
-  "Claude",
-  "Webinar",
-  "Waitlist",
-  "Messaging",
-];
-
-/** The funnels the Ads tab tracked. Titles only — the documents get linked later. */
-const STARTER_ADS_SOPS = [
-  "Cold > VSL",
-  "Cold > Webinar",
-  "Retargeting",
-  "Webinar",
-];
-
-/**
- * The services that need an account, with no values attached. Ordered roughly by how
- * often they get opened.
- */
-const CREDENTIAL_SLOTS = [
-  { service: "Kit", url: "https://app.kit.com" },
-  { service: "Gmail", url: "https://mail.google.com" },
-  { service: "Calendly", url: "https://calendly.com" },
-  { service: "Instagram", url: "https://instagram.com" },
-  { service: "YouTube", url: "https://studio.youtube.com" },
-  { service: "Trakyo", url: "" },
-  { service: "GoDaddy", url: "https://godaddy.com", notes: "Domains / hosting" },
-];
 
 const STARTER_KPIS = [
   { label: "Booked calls", color: "blue" },
@@ -58,39 +20,116 @@ const STARTER_KPIS = [
   { label: "Cost per lead", color: "violet" },
 ];
 
-export async function seedStarterContent() {
-  if ((await prisma.sopCategory.count()) === 0) {
-    for (const [index, name] of SOP_CATEGORIES.entries()) {
-      const category = await prisma.sopCategory.create({
-        data: { name, position: index },
-      });
-      if (name === "Ads") {
-        await prisma.sop.createMany({
-          data: STARTER_ADS_SOPS.map((objective, i) => ({
-            categoryId: category.id,
-            title: objective,
-            objective,
-            position: i,
-          })),
-        });
+/** The dashboard first-run setup creates, so the owner lands somewhere real. */
+export const FIRST_DASHBOARD = {
+  name: "CMO Dashboard",
+  slug: "cmo",
+  description: "Weekly board, client roster and SOP library for marketing.",
+  color: "blue",
+};
+
+export async function takenDashboardSlugs() {
+  const rows = await prisma.dashboard.findMany({ select: { slug: true } });
+  return rows.map((r) => r.slug);
+}
+
+/**
+ * Creates a dashboard and everything it starts life with.
+ *
+ * `copyFromId` clones an existing dashboard's SOP library and KPI row — the shape of
+ * something that already works, without any of its clients or its week. When it is
+ * absent the starter library is used instead.
+ *
+ * Clients, tasks and logins are never copied. They are the specific work of the
+ * dashboard they belong to, and a new one arriving pre-populated with another team's
+ * clients would be worse than empty.
+ */
+export async function createDashboardWithContent(input: {
+  name: string;
+  description?: string | null;
+  color?: string;
+  copyFromId?: string | null;
+}) {
+  const base = slugify(input.name, "dashboard");
+  const slug = uniqueSlug(base, await takenDashboardSlugs());
+
+  let sopContent: SopContent = starterSopContent();
+  let kpis = STARTER_KPIS;
+
+  if (input.copyFromId) {
+    const source = await prisma.dashboard.findUnique({
+      where: { id: input.copyFromId },
+      select: {
+        sopContent: true,
+        kpis: {
+          orderBy: { position: "asc" },
+          select: { label: true, color: true, sublabel: true },
+        },
+      },
+    });
+    if (source) {
+      const parsed = parseSopContent(source.sopContent);
+      // An empty library is not worth copying — fall back to the starter, or the new
+      // dashboard begins with no SOP structure at all.
+      if (parsed.sections.length > 0) sopContent = parsed;
+      if (source.kpis.length > 0) {
+        kpis = source.kpis.map((k) => ({
+          label: k.label,
+          color: k.color,
+        }));
       }
     }
   }
 
-  if ((await prisma.kpi.count()) === 0) {
-    await prisma.kpi.createMany({
-      data: STARTER_KPIS.map((kpi, index) => ({ ...kpi, position: index })),
-    });
-  }
+  const last = await prisma.dashboard.findFirst({
+    orderBy: { position: "desc" },
+    select: { position: true },
+  });
 
-  if ((await prisma.credential.count()) === 0) {
-    await prisma.credential.createMany({
-      data: CREDENTIAL_SLOTS.map((slot, index) => ({
-        service: slot.service,
-        url: slot.url || null,
-        notes: slot.notes ?? null,
-        position: index,
-      })),
-    });
-  }
+  return prisma.dashboard.create({
+    data: {
+      name: input.name,
+      slug,
+      description: input.description?.trim() || null,
+      color: input.color ?? "blue",
+      status: DASHBOARD_STATUS.DRAFT,
+      position: (last?.position ?? -1) + 1,
+      sopContent: sopContent as unknown as object,
+      kpis: {
+        create: kpis.map((kpi, index) => ({ ...kpi, position: index })),
+      },
+    },
+  });
+}
+
+/**
+ * The first dashboard, created alongside the owner account by /setup.
+ *
+ * A no-op if any dashboard already exists, so re-running setup cannot produce a second
+ * empty CMO board.
+ */
+export async function seedFirstDashboard() {
+  if ((await prisma.dashboard.count()) > 0) return;
+
+  const last = await prisma.dashboard.findFirst({
+    orderBy: { position: "desc" },
+    select: { position: true },
+  });
+
+  await prisma.dashboard.create({
+    data: {
+      name: FIRST_DASHBOARD.name,
+      slug: FIRST_DASHBOARD.slug,
+      description: FIRST_DASHBOARD.description,
+      color: FIRST_DASHBOARD.color,
+      status: DASHBOARD_STATUS.LIVE,
+      // The one new dashboards are cloned from until the owner says otherwise.
+      isTemplate: true,
+      position: (last?.position ?? -1) + 1,
+      sopContent: starterSopContent() as unknown as object,
+      kpis: {
+        create: STARTER_KPIS.map((kpi, index) => ({ ...kpi, position: index })),
+      },
+    },
+  });
 }

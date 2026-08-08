@@ -20,9 +20,11 @@ const HIDE_AFTER_MS = 30_000;
 export function SecretField({
   id,
   hasSecret,
+  dashboardSlug,
 }: {
   id: string;
   hasSecret: boolean;
+  dashboardSlug: string;
 }) {
   const [value, setValue] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -49,7 +51,7 @@ export function SecretField({
   const reveal = () => {
     setError(null);
     startTransition(async () => {
-      const result = await revealSecret(id);
+      const result = await revealSecret(dashboardSlug, id);
       if (result.error) {
         setError(result.error);
         return;
@@ -63,7 +65,7 @@ export function SecretField({
   const copy = async () => {
     // Fetched fresh rather than requiring a reveal first — copying to paste into a login
     // box is the common case, and it need never put the value on screen at all.
-    const text = value ?? (await revealSecret(id)).value;
+    const text = value ?? (await revealSecret(dashboardSlug, id)).value;
     if (!text) return;
     try {
       await navigator.clipboard.writeText(text);

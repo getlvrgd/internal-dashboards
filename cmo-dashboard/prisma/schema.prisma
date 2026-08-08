@@ -1,11 +1,15 @@
-// CMO dashboard schema.
+// Internal dashboards schema.
 //
-// Unlike the sales rep hub, which keeps a whole hub body as one JSON document, every
-// section here is queried on its own axis: tasks by week and by client, credentials by
-// client and by role, SOPs by category. Those are relations, not a document, so they
-// are modelled as tables.
+// One app, many dashboards. The CMO dashboard is no longer the product — it is the
+// first row in `Dashboard`, and everything it owns (clients, tasks, KPIs, its SOP
+// library, its people) hangs off that row. Adding the next internal dashboard is an
+// INSERT, not a new codebase.
 //
-// Two things are worth knowing before reading further:
+// Three things are worth knowing before reading further:
+//
+//   * Every workspace table carries `dashboardId` and is read through the guards in
+//     src/lib/access.ts. Scoping is never left to the caller remembering a `where` —
+//     see resolveDashboard(), which is the only way a page gets a dashboard id.
 //
 //   * A `Task` belongs to a week, identified by `weekOf` — always the Monday, at UTC
 //     midnight. Nothing rolls over silently; see ensureWeek() in src/lib/week.ts for
@@ -13,7 +17,7 @@
 //
 //   * A `Credential` never stores a password in the clear. `secretCipher` holds an
 //     AES-256-GCM payload that only src/lib/secrets.ts can open, and only an owner or
-//     admin can reach the action that opens it.
+//     a dashboard admin can reach the action that opens it.
 
 generator client {
   provider = "prisma-client"
@@ -24,28 +28,114 @@ datasource db {
   provider = "postgresql"
 }
 
+/// A person with a login. One account spans every dashboard they have been given.
+///
+/// `role` is the platform role, not a per-dashboard one. OWNER and ADMIN reach every
+/// dashboard without a Membership row; everyone else reaches exactly the dashboards
+/// they hold a Membership for. That split is what lets the owner hub hand out access
+/// from one roster instead of a Team page per dashboard.
 model User {
   id String @id @default(cuid())
 
   email        String  @unique
   name         String
   passwordHash String
-  /// OWNER | ADMIN | CMO | VIEWER — see src/lib/options.ts
+  /// OWNER | ADMIN | MEMBER | VIEWER — see src/lib/options.ts
   role         String
   /// Deactivating is how access is revoked; the row stays so past tasks keep their owner.
   isActive     Boolean @default(true)
 
   createdAt DateTime @default(now())
 
-  tasks Task[]
+  tasks       Task[]
+  memberships Membership[]
 }
 
-/// One client / offer owner. Everything else in the app can be filtered down to one.
+/// One internal dashboard — the unit the owner hub manages.
+///
+/// A dashboard is a whole workspace: its own weekly board, client roster, KPI row, SOP
+/// library and people. `isTemplate` marks the one new dashboards are cloned from, so
+/// "create a dashboard" copies a shape that already works rather than opening an empty
+/// one nobody knows how to fill.
+model Dashboard {
+  id   String @id @default(cuid())
+  name String
+  /// URL segment: /d/<slug>
+  slug String @unique
+
+  /// One line under the name on the owner hub, e.g. "Weekly marketing operations".
+  description String?
+
+  /// LIVE | DRAFT | ARCHIVED — see src/lib/options.ts. An archived dashboard closes to
+  /// its members but stays reachable for the owner, who is the one retiring it.
+  status String @default("DRAFT")
+
+  /// One of the eight tile tints, so a dashboard is recognisable at a glance.
+  color String @default("blue")
+
+  /// New dashboards are cloned from this one. At most one row should carry it; the
+  /// action in src/app/actions/dashboards.ts clears the flag elsewhere when it is set.
+  isTemplate Boolean @default(false)
+
+  /// Manual ordering on the owner hub; lower sorts first.
+  position Int @default(0)
+
+  /// The SOP library, as one block document rather than rows.
+  ///
+  /// Sections hold pages, pages hold blocks, and a block is a link, an embedded video,
+  /// a written note or a checklist — the same model the sales rep hub uses, so the two
+  /// products edit the same way. It is one JSON column because a library is always read
+  /// and written whole: nothing queries "every SOP across dashboards by category", and
+  /// modelling it as tables bought joins that no page ever needed.
+  ///
+  /// Shape and defaults live in src/lib/sops.ts.
+  sopContent Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  clients     Client[]
+  tasks       Task[]
+  kpis        Kpi[]
+  memberships Membership[]
+
+  @@index([status])
+}
+
+/// Who can open which dashboard, and what they may do inside it.
+///
+/// The per-dashboard `role` is deliberately separate from `User.role`: the same person
+/// can run one dashboard and only read another. Owners and admins are not listed here —
+/// they reach everything by platform role, and writing rows for them would mean every
+/// new dashboard had to remember to grant them access.
+model Membership {
+  id String @id @default(cuid())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  dashboardId String
+  dashboard   Dashboard @relation(fields: [dashboardId], references: [id], onDelete: Cascade)
+
+  /// MANAGER | MEMBER | VIEWER — see src/lib/options.ts
+  role String @default("MEMBER")
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, dashboardId])
+  @@index([dashboardId])
+}
+
+/// One client / offer owner, inside one dashboard.
 model Client {
   id   String @id @default(cuid())
   name String
-  /// URL segment: /clients/<slug>
-  slug String @unique
+  /// URL segment: /d/<dashboard>/clients/<slug>. Unique per dashboard, not globally —
+  /// two dashboards may each run a client called "acme" without colliding.
+  slug String
+
+  dashboardId String
+  dashboard   Dashboard @relation(fields: [dashboardId], references: [id], onDelete: Cascade)
 
   /// The person on the client side who owns the offer.
   offerOwner String?
@@ -70,7 +160,8 @@ model Client {
   tasks       Task[]
   credentials Credential[]
 
-  @@index([status])
+  @@unique([dashboardId, slug])
+  @@index([dashboardId, status])
 }
 
 /// One line on the weekly board, or one quick capture on the to-do list.
@@ -78,6 +169,9 @@ model Task {
   id    String  @id @default(cuid())
   title String
   notes String?
+
+  dashboardId String
+  dashboard   Dashboard @relation(fields: [dashboardId], references: [id], onDelete: Cascade)
 
   /// 0 = Monday … 6 = Sunday. Null means it sits on the to-do list rather than a day.
   day Int?
@@ -112,45 +206,22 @@ model Task {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([weekOf, day])
+  @@index([dashboardId, weekOf, day])
   @@index([clientId])
-  @@index([status])
+  @@index([dashboardId, status])
 }
 
-/// A grouping on the SOP board — Ads, YouTube, VSL Funnel and so on. A table rather
-/// than a string on Sop so the tabs can be renamed and reordered without touching rows.
-model SopCategory {
-  id       String @id @default(cuid())
-  name     String @unique
-  position Int    @default(0)
-
-  sops Sop[]
-}
-
-model Sop {
-  id    String @id @default(cuid())
-  title String
-  /// The funnel or objective this covers, e.g. "Cold > VSL".
-  objective String?
-  url       String?
-  summary   String?
-
-  categoryId String
-  category   SopCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
-
-  position Int @default(0)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([categoryId])
-}
-
-/// A login. Company-wide when `clientId` is null, otherwise tied to one client.
+/// A login, always belonging to one client.
+///
+/// It used to be possible for a credential to be company-wide, with a null `clientId`
+/// and a general vault page listing the lot. That is gone: logins differ per client, so
+/// a shared folder was the wrong shape and the vault route it needed is one more place
+/// access could be got wrong. A login now exists only inside the client it belongs to,
+/// and dies with them.
 ///
 /// The password is never stored or returned in the clear: `secretCipher` is sealed by
 /// src/lib/secrets.ts and opened only by an explicit reveal action, which checks the
-/// caller is an owner or admin first. Listing credentials does not decrypt anything.
+/// caller first. Listing credentials does not decrypt anything.
 model Credential {
   id String @id @default(cuid())
 
@@ -165,8 +236,8 @@ model Credential {
 
   notes String?
 
-  clientId String?
-  client   Client? @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  clientId String
+  client   Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
 
   position Int @default(0)
 
@@ -176,9 +247,9 @@ model Credential {
   @@index([clientId])
 }
 
-/// A number on the top row of the dashboard — MRR, ad spend, booked calls. Kept by
-/// hand: this dashboard is a control surface, not an analytics pipeline, and a figure
-/// someone typed after checking the source beats a stale automatic one.
+/// A number on the top row of a dashboard — MRR, ad spend, booked calls. Kept by
+/// hand: this is a control surface, not an analytics pipeline, and a figure someone
+/// typed after checking the source beats a stale automatic one.
 model Kpi {
   id    String @id @default(cuid())
   label String
@@ -189,7 +260,12 @@ model Kpi {
   /// One of the eight tile tints.
   color String @default("blue")
 
+  dashboardId String
+  dashboard   Dashboard @relation(fields: [dashboardId], references: [id], onDelete: Cascade)
+
   position Int @default(0)
 
   updatedAt DateTime @updatedAt
+
+  @@index([dashboardId])
 }

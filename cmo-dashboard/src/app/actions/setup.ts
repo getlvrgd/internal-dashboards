@@ -7,7 +7,7 @@ import { needsSetup } from "@/lib/access";
 import { createSession, hashPassword } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { ROLES } from "@/lib/options";
-import { seedStarterContent } from "@/lib/seed";
+import { seedFirstDashboard } from "@/lib/seed";
 
 export type SetupState = { error?: string };
 
@@ -18,8 +18,9 @@ const setupSchema = z.object({
 });
 
 /**
- * First run only. Creates the one owner account and the starter scaffolding — the SOP
- * categories and the KPI row — so the board is not a blank page on day one.
+ * First run only. Creates the one owner account and the first dashboard — the CMO one,
+ * with its starter SOP library and KPI row — so the owner hub is not a blank page on
+ * day one and there is somewhere to land.
  *
  * `needsSetup` is re-checked here rather than trusted from the page: the page guard runs
  * on render, and without this a stale open tab could post a second owner months later.
@@ -29,7 +30,7 @@ export async function completeSetup(
   formData: FormData,
 ): Promise<SetupState> {
   if (!(await needsSetup())) {
-    return { error: "This dashboard has already been set up." };
+    return { error: "This has already been set up." };
   }
 
   const parsed = setupSchema.safeParse({
@@ -54,7 +55,7 @@ export async function completeSetup(
     },
   });
 
-  await seedStarterContent();
+  await seedFirstDashboard();
   await createSession(user);
   redirect("/");
 }

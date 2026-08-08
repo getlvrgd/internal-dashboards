@@ -17,7 +17,9 @@ import { Field, inputClass, primaryButtonClass } from "./ui";
  */
 export function ClientForm({
   client,
+  dashboardSlug,
 }: {
+  dashboardSlug: string;
   client?: {
     id: string;
     name: string;
@@ -47,7 +49,7 @@ export function ClientForm({
 
   return (
     <form
-      action={client ? updateClient : createClient}
+      action={(client ? updateClient : createClient).bind(null, dashboardSlug)}
       className="space-y-4 rounded-xl border border-subtle bg-surface p-4"
     >
       {client && <input type="hidden" name="id" value={client.id} />}

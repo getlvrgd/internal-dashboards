@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
-import { requireEditor } from "@/lib/access";
+import { requireDashboardWrite } from "@/lib/access";
 import { prisma } from "@/lib/db";
 import {
   ALL_PRIORITIES,
@@ -15,9 +15,13 @@ import { addWeeks, carryOver, parseWeekParam } from "@/lib/week";
 /**
  * Every write to the weekly board and the to-do list.
  *
- * All of them call requireEditor() first — a viewer's session must not be able to reach
- * a mutation by posting the form directly, and the page-level guard says nothing about
- * that.
+ * All of them call requireDashboardWrite() first — a viewer's session, or a member of a
+ * different dashboard, must not be able to reach a mutation by posting the form
+ * directly, and the page-level guard says nothing about that.
+ *
+ * Every row is then re-read scoped to the resolved dashboard before it is touched. The
+ * id in the form is user input; `where: { id }` alone would let a member of one
+ * dashboard edit another's board by posting its task id.
  */
 
 /** Empty strings arrive from unfilled <select> and <input> fields; treat them as unset. */
@@ -47,8 +51,54 @@ const createSchema = z.object({
     .transform((v) => v === "on" || v === "true"),
 });
 
-export async function createTask(formData: FormData) {
-  await requireEditor();
+/** A task id, but only if it lives in this dashboard. */
+async function ownedTask<T extends Record<string, boolean>>(
+  id: string,
+  dashboardId: string,
+  select: T,
+) {
+  if (!id) return null;
+  return prisma.task.findFirst({
+    where: { id, dashboardId },
+    select: { id: true, ...select },
+  });
+}
+
+/**
+ * A client or assignee posted with a task, verified before it is stored.
+ *
+ * Without this a crafted form could file a task against a client in someone else's
+ * dashboard, which would then show up on their board.
+ */
+async function safeClientId(clientId: string | null, dashboardId: string) {
+  if (!clientId) return null;
+  const client = await prisma.client.findFirst({
+    where: { id: clientId, dashboardId },
+    select: { id: true },
+  });
+  return client?.id ?? null;
+}
+
+async function safeAssigneeId(assigneeId: string | null, dashboardId: string) {
+  if (!assigneeId) return null;
+  const user = await prisma.user.findFirst({
+    where: {
+      id: assigneeId,
+      isActive: true,
+      // Assignable people are those who can actually open the dashboard: its members,
+      // plus every admin and the owner, who reach it by platform role.
+      OR: [
+        { memberships: { some: { dashboardId } } },
+        { role: { in: ["OWNER", "ADMIN"] } },
+      ],
+    },
+    select: { id: true },
+  });
+  return user?.id ?? null;
+}
+
+export async function createTask(dashboardSlug: string, formData: FormData) {
+  const { dashboard } = await requireDashboardWrite(dashboardSlug);
 
   const parsed = createSchema.safeParse({
     title: formData.get("title"),
@@ -72,25 +122,26 @@ export async function createTask(formData: FormData) {
   // New rows land at the bottom of their day rather than the top — the board reads as a
   // list you add to, and a task appearing above ones already there loses your place.
   const last = await prisma.task.findFirst({
-    where: { weekOf, day },
+    where: { dashboardId: dashboard.id, weekOf, day },
     orderBy: { position: "desc" },
     select: { position: true },
   });
 
   await prisma.task.create({
     data: {
+      dashboardId: dashboard.id,
       title,
       day,
       weekOf,
-      clientId,
-      assigneeId,
+      clientId: await safeClientId(clientId, dashboard.id),
+      assigneeId: await safeAssigneeId(assigneeId, dashboard.id),
       priority,
       recurring: day === null ? false : recurring,
       position: (last?.position ?? -1) + 1,
     },
   });
 
-  revalidatePath("/");
+  revalidatePath(`/d/${dashboardSlug}`);
 }
 
 const updateSchema = z.object({
@@ -114,8 +165,8 @@ const updateSchema = z.object({
  * One updater for every field, so the row's controls can each post just what they
  * changed. Only keys actually present in the form are written.
  */
-export async function updateTask(formData: FormData) {
-  await requireEditor();
+export async function updateTask(dashboardSlug: string, formData: FormData) {
+  const { dashboard } = await requireDashboardWrite(dashboardSlug);
 
   const raw: Record<string, unknown> = { id: formData.get("id") };
   for (const key of [
@@ -134,11 +185,21 @@ export async function updateTask(formData: FormData) {
   if (!parsed.success) return;
 
   const { id, ...changes } = parsed.data;
+  const task = await ownedTask(id, dashboard.id, {});
+  if (!task) return;
 
   await prisma.task.update({
-    where: { id },
+    where: { id: task.id },
     data: {
       ...changes,
+      ...(changes.clientId === undefined
+        ? {}
+        : { clientId: await safeClientId(changes.clientId, dashboard.id) }),
+      ...(changes.assigneeId === undefined
+        ? {}
+        : {
+            assigneeId: await safeAssigneeId(changes.assigneeId, dashboard.id),
+          }),
       // completedAt is derived, never posted: it is set the moment a task turns DONE and
       // cleared if it is reopened, so "finished this week" needs no separate event log.
       ...(changes.status === undefined
@@ -150,7 +211,7 @@ export async function updateTask(formData: FormData) {
     },
   });
 
-  revalidatePath("/");
+  revalidatePath(`/d/${dashboardSlug}`);
 }
 
 /**
@@ -164,60 +225,58 @@ export async function updateTask(formData: FormData) {
  * storing a previous-status column to restore would be a lot of machinery for a case
  * that is almost always a misclick.
  */
-export async function toggleDone(formData: FormData) {
-  await requireEditor();
+export async function toggleDone(dashboardSlug: string, formData: FormData) {
+  const { dashboard } = await requireDashboardWrite(dashboardSlug);
 
-  const id = String(formData.get("id") ?? "");
-  if (!id) return;
-
-  const task = await prisma.task.findUnique({
-    where: { id },
-    select: { status: true },
-  });
+  const task = await ownedTask(
+    String(formData.get("id") ?? ""),
+    dashboard.id,
+    { status: true },
+  );
   if (!task) return;
 
   const done = task.status === TASK_STATUS.DONE;
 
   await prisma.task.update({
-    where: { id },
+    where: { id: task.id },
     data: {
       status: done ? TASK_STATUS.NOT_STARTED : TASK_STATUS.DONE,
       completedAt: done ? null : new Date(),
     },
   });
 
-  revalidatePath("/");
+  revalidatePath(`/d/${dashboardSlug}`);
 }
 
-export async function toggleRecurring(formData: FormData) {
-  await requireEditor();
+export async function toggleRecurring(
+  dashboardSlug: string,
+  formData: FormData,
+) {
+  const { dashboard } = await requireDashboardWrite(dashboardSlug);
 
-  const id = String(formData.get("id") ?? "");
-  if (!id) return;
-
-  const task = await prisma.task.findUnique({
-    where: { id },
-    select: { recurring: true, weekOf: true },
+  const task = await ownedTask(String(formData.get("id") ?? ""), dashboard.id, {
+    recurring: true,
+    weekOf: true,
   });
   // A to-do has no week to recur into, so the flag is meaningless there.
   if (!task || task.weekOf === null) return;
 
   await prisma.task.update({
-    where: { id },
+    where: { id: task.id },
     data: { recurring: !task.recurring },
   });
 
-  revalidatePath("/");
+  revalidatePath(`/d/${dashboardSlug}`);
 }
 
-export async function deleteTask(formData: FormData) {
-  await requireEditor();
+export async function deleteTask(dashboardSlug: string, formData: FormData) {
+  const { dashboard } = await requireDashboardWrite(dashboardSlug);
 
-  const id = String(formData.get("id") ?? "");
-  if (!id) return;
+  const task = await ownedTask(String(formData.get("id") ?? ""), dashboard.id, {});
+  if (!task) return;
 
-  await prisma.task.delete({ where: { id } });
-  revalidatePath("/");
+  await prisma.task.delete({ where: { id: task.id } });
+  revalidatePath(`/d/${dashboardSlug}`);
 }
 
 /**
@@ -226,11 +285,14 @@ export async function deleteTask(formData: FormData) {
  * Deliberately a button rather than something ensureWeek() does on its own: silently
  * moving rows between weeks would make a past week's board misreport what happened in it.
  */
-export async function carryOverLastWeek(formData: FormData) {
-  await requireEditor();
+export async function carryOverLastWeek(
+  dashboardSlug: string,
+  formData: FormData,
+) {
+  const { dashboard } = await requireDashboardWrite(dashboardSlug);
 
   const to = parseWeekParam(String(formData.get("week") ?? ""));
-  await carryOver(addWeeks(to, -1), to);
+  await carryOver(dashboard.id, addWeeks(to, -1), to);
 
-  revalidatePath("/");
+  revalidatePath(`/d/${dashboardSlug}`);
 }

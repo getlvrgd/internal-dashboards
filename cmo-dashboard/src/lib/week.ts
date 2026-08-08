@@ -84,22 +84,23 @@ export function todayIndex(monday: Date): number | null {
  * forward here: moving someone's rows between weeks behind their back makes last week's
  * board a lie. The UI offers that as one explicit click instead — see carryOver().
  */
-export async function ensureWeek(monday: Date) {
+export async function ensureWeek(dashboardId: string, monday: Date) {
   const existing = await prisma.task.findFirst({
-    where: { weekOf: monday },
+    where: { dashboardId, weekOf: monday },
     select: { id: true },
   });
   if (existing) return;
 
   const previous = addWeeks(monday, -1);
   const routine = await prisma.task.findMany({
-    where: { weekOf: previous, recurring: true },
+    where: { dashboardId, weekOf: previous, recurring: true },
     orderBy: [{ day: "asc" }, { position: "asc" }],
   });
   if (routine.length === 0) return;
 
   await prisma.task.createMany({
     data: routine.map((task) => ({
+      dashboardId,
       title: task.title,
       notes: task.notes,
       day: task.day,
@@ -122,9 +123,10 @@ export async function ensureWeek(monday: Date) {
  * done. Recurring tasks are excluded — the next week already has its own clone of those,
  * and dragging the old one along would double them up.
  */
-export async function carryOver(from: Date, to: Date) {
+export async function carryOver(dashboardId: string, from: Date, to: Date) {
   const { count } = await prisma.task.updateMany({
     where: {
+      dashboardId,
       weekOf: from,
       recurring: false,
       status: { not: TASK_STATUS.DONE },

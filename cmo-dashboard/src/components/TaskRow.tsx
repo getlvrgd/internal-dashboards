@@ -44,11 +44,13 @@ export function TaskRow({
   clients,
   people,
   editable,
+  dashboardSlug,
 }: {
   task: TaskRowData;
   clients: RowOption[];
   people: RowOption[];
   editable: boolean;
+  dashboardSlug: string;
 }) {
   const done = task.status === TASK_STATUS.DONE;
   const clientName = clients.find((c) => c.value === task.clientId)?.label;
@@ -76,7 +78,7 @@ export function TaskRow({
 
   return (
     <li className="group flex flex-wrap items-center gap-1.5 border-t border-subtle px-2 py-1.5 text-[13px] first:border-t-0 sm:flex-nowrap">
-      <form action={toggleDone} className="flex shrink-0 items-center">
+      <form action={toggleDone.bind(null, dashboardSlug)} className="flex shrink-0 items-center">
         <input type="hidden" name="id" value={task.id} />
         <button
           type="submit"
@@ -104,7 +106,7 @@ export function TaskRow({
       {/* Every editable field posts together; AutoSubmitSelect and InlineText both
           submit this form, and updateTask writes only the keys it is given. */}
       <form
-        action={updateTask}
+        action={updateTask.bind(null, dashboardSlug)}
         className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 sm:flex-nowrap"
       >
         <input type="hidden" name="id" value={task.id} />
@@ -162,7 +164,7 @@ export function TaskRow({
       </form>
 
       <div className="flex shrink-0 items-center gap-0.5">
-        <form action={toggleRecurring}>
+        <form action={toggleRecurring.bind(null, dashboardSlug)}>
           <input type="hidden" name="id" value={task.id} />
           <button
             type="submit"
@@ -201,7 +203,7 @@ export function TaskRow({
           </button>
         </form>
 
-        <form action={deleteTask}>
+        <form action={deleteTask.bind(null, dashboardSlug)}>
           <input type="hidden" name="id" value={task.id} />
           <button
             type="submit"

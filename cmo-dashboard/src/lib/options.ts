@@ -9,23 +9,33 @@ export type Option = { value: string; label: string };
 
 /* ---------------------------------------------------------------------- roles -- */
 
+/**
+ * The platform role on the account itself.
+ *
+ * This answers "may this person reach the owner hub, and every dashboard in it?" —
+ * nothing finer. What someone may do *inside* one dashboard is a Membership, below,
+ * because the same person can run one dashboard and only read another.
+ */
 export const ROLES = {
   /**
    * One owner, created by first-run setup and by nothing else — deliberately absent
    * from ASSIGNABLE_ROLES, so no admin can hand the role out or take it.
    */
   OWNER: "OWNER",
+  /** Reaches every dashboard and the owner hub, but cannot delete a dashboard. */
   ADMIN: "ADMIN",
-  CMO: "CMO",
+  /** Reaches exactly the dashboards they hold a Membership for. */
+  MEMBER: "MEMBER",
+  /** As MEMBER, but never writes anywhere. */
   VIEWER: "VIEWER",
 } as const;
 
 export type Role = (typeof ROLES)[keyof typeof ROLES];
 
 export const ASSIGNABLE_ROLES: Option[] = [
-  { value: ROLES.CMO, label: "CMO — runs the board, no credentials" },
-  { value: ROLES.VIEWER, label: "Viewer — read-only" },
-  { value: ROLES.ADMIN, label: "Admin — everything, including logins" },
+  { value: ROLES.MEMBER, label: "Member — only the dashboards you grant" },
+  { value: ROLES.VIEWER, label: "Viewer — read-only, everywhere" },
+  { value: ROLES.ADMIN, label: "Admin — every dashboard, including logins" },
 ];
 
 const ADMIN_ROLES: string[] = [ROLES.OWNER, ROLES.ADMIN];
@@ -33,21 +43,83 @@ const ADMIN_ROLES: string[] = [ROLES.OWNER, ROLES.ADMIN];
 /** Ask this rather than comparing against ROLES.ADMIN by hand — it misses the owner. */
 export const hasAdminAccess = (role: string) => ADMIN_ROLES.includes(role);
 
+export const isOwnerRole = (role: string) => role === ROLES.OWNER;
+
 /**
- * Who may edit the board. A viewer reads; everyone else writes.
- *
- * This is deliberately separate from hasAdminAccess: the CMO runs the week and should
- * not have to ask anyone to add a task, but the login vault is a different question and
- * asks the stricter one.
+ * Who may write at all. A viewer reads; everyone else's write is then checked again
+ * against their membership on the dashboard they are writing to.
  */
 export const canEdit = (role: string) => role !== ROLES.VIEWER;
 
-/** The login vault. Credentials are the one thing a CMO account cannot reach. */
-export const canSeeCredentials = (role: string) => hasAdminAccess(role);
-
 export const roleLabel = (value: string) =>
-  ({ OWNER: "Owner", ADMIN: "Admin", CMO: "CMO", VIEWER: "Viewer" })[value] ??
-  value;
+  ({
+    OWNER: "Owner",
+    ADMIN: "Admin",
+    MEMBER: "Member",
+    VIEWER: "Viewer",
+  })[value] ?? value;
+
+/* -------------------------------------------------------- membership roles -- */
+
+/**
+ * What someone may do inside one dashboard they have been given.
+ *
+ * MANAGER is the per-dashboard equivalent of an admin: they run that dashboard and can
+ * open its logins, but the grant stops at its edge. That is the whole point of keeping
+ * this separate from the platform role — handing someone the CMO dashboard should not
+ * hand them the next dashboard you build.
+ */
+export const MEMBERSHIP_ROLES = {
+  MANAGER: "MANAGER",
+  MEMBER: "MEMBER",
+  VIEWER: "VIEWER",
+} as const;
+
+export type MembershipRole =
+  (typeof MEMBERSHIP_ROLES)[keyof typeof MEMBERSHIP_ROLES];
+
+export const MEMBERSHIP_ROLE_OPTIONS: Option[] = [
+  { value: MEMBERSHIP_ROLES.MANAGER, label: "Manager — runs it, sees logins" },
+  { value: MEMBERSHIP_ROLES.MEMBER, label: "Member — edits the board" },
+  { value: MEMBERSHIP_ROLES.VIEWER, label: "Viewer — read-only" },
+];
+
+export const ALL_MEMBERSHIP_ROLES: string[] = Object.values(MEMBERSHIP_ROLES);
+
+export const membershipRoleLabel = (value: string) =>
+  ({ MANAGER: "Manager", MEMBER: "Member", VIEWER: "Viewer" })[value] ?? value;
+
+/**
+ * The login vault, asked per dashboard.
+ *
+ * Credentials are the one thing an ordinary member cannot reach: a login is the client's
+ * account, not ours, and "everyone on the board" is too wide a door for it.
+ */
+export const membershipCanSeeCredentials = (role: string) =>
+  role === MEMBERSHIP_ROLES.MANAGER;
+
+export const membershipCanEdit = (role: string) =>
+  role !== MEMBERSHIP_ROLES.VIEWER;
+
+/* ------------------------------------------------------ dashboard statuses -- */
+
+export const DASHBOARD_STATUS = {
+  LIVE: "LIVE",
+  DRAFT: "DRAFT",
+  ARCHIVED: "ARCHIVED",
+} as const;
+
+export const DASHBOARD_STATUSES: Option[] = [
+  { value: DASHBOARD_STATUS.LIVE, label: "Live" },
+  { value: DASHBOARD_STATUS.DRAFT, label: "Draft" },
+  { value: DASHBOARD_STATUS.ARCHIVED, label: "Archived" },
+];
+
+export const ALL_DASHBOARD_STATUSES: string[] =
+  Object.values(DASHBOARD_STATUS);
+
+export const dashboardStatusLabel = (value: string) =>
+  DASHBOARD_STATUSES.find((s) => s.value === value)?.label ?? value;
 
 /* ------------------------------------------------------------- task statuses -- */
 
@@ -176,7 +248,7 @@ export const isTileColor = (value: unknown): value is string =>
 
 /* --------------------------------------------------------------------- slug -- */
 
-export function slugify(input: string) {
+export function slugify(input: string, fallback = "item") {
   return (
     input
       .toLowerCase()
@@ -184,6 +256,20 @@ export function slugify(input: string) {
       .replace(/['’]/g, "")
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-+|-+$/g, "")
-      .slice(0, 48) || "client"
+      .slice(0, 48) || fallback
   );
+}
+
+/**
+ * Slugs are unique per scope, and a person naming their second "Acme" should get
+ * `acme-2` rather than an error telling them to think of a different name.
+ */
+export function uniqueSlug(base: string, taken: Iterable<string>): string {
+  const used = new Set(taken);
+  if (!used.has(base)) return base;
+  for (let n = 2; n < 500; n += 1) {
+    const candidate = `${base}-${n}`;
+    if (!used.has(candidate)) return candidate;
+  }
+  return `${base}-${Date.now().toString(36)}`;
 }

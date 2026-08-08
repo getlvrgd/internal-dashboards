@@ -2,8 +2,7 @@ import Link from "next/link";
 
 import { Nav } from "@/components/Nav";
 import { Chip, EmptyNote, primaryButtonClass } from "@/components/ui";
-import { requireSession } from "@/lib/access";
-import { sessionCanEdit } from "@/lib/auth";
+import { resolveDashboard } from "@/lib/access";
 import { prisma } from "@/lib/db";
 import { readQuickLinks } from "@/lib/links";
 import { clientStatusLabel, isTileColor, TASK_STATUS } from "@/lib/options";
@@ -14,11 +13,18 @@ export const dynamic = "force-dynamic";
  * Every client, with the one number that says whether they are being looked after: how
  * much of their work is still open.
  */
-export default async function ClientsPage() {
-  const session = await requireSession();
-  const editable = sessionCanEdit(session);
+export default async function ClientsPage({
+  params,
+}: {
+  params: Promise<{ slug: string }>;
+}) {
+  const { slug } = await params;
+  const context = await resolveDashboard(slug);
+  const { dashboard, session } = context;
+  const editable = context.canEdit;
 
   const clients = await prisma.client.findMany({
+    where: { dashboardId: dashboard.id },
     orderBy: [{ position: "asc" }, { name: "asc" }],
     include: {
       _count: {
@@ -29,7 +35,7 @@ export default async function ClientsPage() {
 
   return (
     <>
-      <Nav session={session} />
+      <Nav session={session} dashboard={dashboard} context={context} />
 
       <main className="mx-auto w-full max-w-6xl flex-1 px-5 py-6">
         <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
@@ -40,7 +46,7 @@ export default async function ClientsPage() {
             </p>
           </div>
           {editable && (
-            <Link href="/clients/new" className={primaryButtonClass}>
+            <Link href={`/d/${slug}/clients/new`} className={primaryButtonClass}>
               Add client
             </Link>
           )}
@@ -60,7 +66,7 @@ export default async function ClientsPage() {
               return (
                 <Link
                   key={client.id}
-                  href={`/clients/${client.slug}`}
+                  href={`/d/${slug}/clients/${client.slug}`}
                   className="group rounded-xl border border-subtle bg-surface p-4 transition-colors hover:border-strong"
                 >
                   <div className="flex items-start justify-between gap-2">

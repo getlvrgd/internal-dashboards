@@ -1,23 +1,38 @@
 import "server-only";
 
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 
 import {
   getSession,
   isAdmin,
+  isOwner,
   sessionCanEdit,
-  sessionCanSeeCredentials,
   type Session,
 } from "./auth";
 import { prisma } from "./db";
-import { ROLES } from "./options";
+import {
+  DASHBOARD_STATUS,
+  MEMBERSHIP_ROLES,
+  membershipCanEdit,
+  membershipCanSeeCredentials,
+  ROLES,
+} from "./options";
 
 /**
- * The guards every page and action goes through.
+ * The guards every page and every server action goes through.
  *
- * Kept in one file so the question "who can do this?" is answered in one place rather
- * than re-derived at each call site — that is how a check gets forgotten on the one
- * route that mattered.
+ * Two rules, enforced here rather than at each call site:
+ *
+ *   1. An owner or admin reaches every dashboard. Everyone else reaches exactly the
+ *      dashboards they hold a Membership for, and asking for one they do not hold
+ *      returns a 404 — not a redirect — so the app never confirms it exists.
+ *
+ *   2. Nothing downstream is trusted to remember `where: { dashboardId }`. A page gets
+ *      its dashboard from resolveDashboard(), and a write gets it from
+ *      requireDashboardWrite(), which re-checks the id against the session instead of
+ *      believing the hidden field in the form that posted it.
+ *
+ * Hiding a nav link is never the control; these functions are.
  */
 
 /** True until an owner exists. Only /setup asks. */
@@ -40,31 +55,199 @@ export async function requireSession(): Promise<Session> {
   redirect("/login");
 }
 
-/** For actions that write. A viewer gets a thrown error, not a silent no-op. */
-export async function requireEditor(): Promise<Session> {
-  const session = await requireSession();
-  if (!sessionCanEdit(session)) {
-    throw new Error("Read-only account.");
-  }
-  return session;
-}
-
+/** The owner hub. Admins and the owner only. */
 export async function requireAdmin(): Promise<Session> {
   const session = await requireSession();
-  if (!isAdmin(session)) {
-    throw new Error("Not allowed.");
-  }
+  if (!isAdmin(session)) redirect("/");
   return session;
 }
 
 /**
- * The login vault. Separate from requireAdmin only so the intent reads clearly at the
- * call sites that matter most — today the two are the same rule.
+ * Signed in as the owner. Guards deleting a dashboard, which no admin may do.
+ *
+ * The owner-only button being hidden from admins is a courtesy, not the control — a
+ * replayed form post from an admin lands here.
  */
-export async function requireVaultAccess(): Promise<Session> {
+export async function requireOwner(): Promise<Session> {
   const session = await requireSession();
-  if (!sessionCanSeeCredentials(session)) {
-    throw new Error("Credentials are limited to the owner and admins.");
-  }
+  if (!isOwner(session)) redirect("/");
   return session;
+}
+
+export type DashboardContext = {
+  session: Session;
+  dashboard: {
+    id: string;
+    name: string;
+    slug: string;
+    description: string | null;
+    status: string;
+    color: string;
+    isTemplate: boolean;
+    sopContent: unknown;
+  };
+  /** MANAGER for owners and admins; otherwise whatever the Membership says. */
+  role: string;
+  /** May write to this dashboard. */
+  canEdit: boolean;
+  /** May open a client's logins. */
+  canSeeCredentials: boolean;
+  /** May manage this dashboard's people and settings. */
+  canManage: boolean;
+};
+
+const DASHBOARD_FIELDS = {
+  id: true,
+  name: true,
+  slug: true,
+  description: true,
+  status: true,
+  color: true,
+  isTemplate: true,
+  sopContent: true,
+} as const;
+
+/**
+ * Resolves `/d/<slug>` for the current user.
+ *
+ * An archived dashboard closes to its members but stays open to owners and admins —
+ * otherwise someone with the URL bookmarked would carry on working a dashboard that has
+ * been retired, and the person who retired it could not get back in to finish the job.
+ */
+export async function resolveDashboard(
+  slug: string,
+): Promise<DashboardContext> {
+  const session = await requireSession();
+
+  const dashboard = await prisma.dashboard.findUnique({
+    where: { slug },
+    select: DASHBOARD_FIELDS,
+  });
+  if (!dashboard) notFound();
+
+  const admin = isAdmin(session);
+
+  let role: string;
+  if (admin) {
+    role = MEMBERSHIP_ROLES.MANAGER;
+  } else {
+    const membership = await prisma.membership.findUnique({
+      where: {
+        userId_dashboardId: {
+          userId: session.userId,
+          dashboardId: dashboard.id,
+        },
+      },
+      select: { role: true },
+    });
+    if (!membership) notFound();
+    if (dashboard.status === DASHBOARD_STATUS.ARCHIVED) notFound();
+    role = membership.role;
+  }
+
+  // A platform VIEWER is read-only everywhere, whatever their membership says. The
+  // stricter of the two answers wins, so a generous grant cannot widen a read-only
+  // account.
+  const canEdit = sessionCanEdit(session) && membershipCanEdit(role);
+
+  return {
+    session,
+    dashboard,
+    role,
+    canEdit,
+    canSeeCredentials: membershipCanSeeCredentials(role),
+    canManage: admin || role === MEMBERSHIP_ROLES.MANAGER,
+  };
+}
+
+/** As resolveDashboard, but a reader gets an error rather than a silent no-op. */
+export async function requireDashboardEditor(
+  slug: string,
+): Promise<DashboardContext> {
+  const context = await resolveDashboard(slug);
+  if (!context.canEdit) throw new Error("Read-only account.");
+  return context;
+}
+
+/** Managing people, settings and the SOP library's shape. */
+export async function requireDashboardManager(
+  slug: string,
+): Promise<DashboardContext> {
+  const context = await resolveDashboard(slug);
+  if (!context.canManage) notFound();
+  return context;
+}
+
+/** Opening a stored password. */
+export async function requireVaultAccess(
+  slug: string,
+): Promise<DashboardContext> {
+  const context = await resolveDashboard(slug);
+  if (!context.canSeeCredentials) {
+    throw new Error("Logins are limited to managers of this dashboard.");
+  }
+  return context;
+}
+
+/**
+ * The dashboard a server action is writing to, verified against the session rather than
+ * trusted from the form body.
+ *
+ * Actions post a slug in a hidden field. That field is user input like any other, so it
+ * buys nothing on its own — it is only ever a lookup key, and the membership check
+ * behind it is what decides the answer.
+ */
+export async function requireDashboardWrite(
+  slug: string,
+): Promise<DashboardContext> {
+  return requireDashboardEditor(slug);
+}
+
+/**
+ * A client inside a dashboard, resolved together so no caller can pair a client id from
+ * one dashboard with a slug from another.
+ */
+export async function resolveClient(dashboardSlug: string, clientSlug: string) {
+  const context = await resolveDashboard(dashboardSlug);
+  const client = await prisma.client.findUnique({
+    where: {
+      dashboardId_slug: {
+        dashboardId: context.dashboard.id,
+        slug: clientSlug,
+      },
+    },
+  });
+  if (!client) notFound();
+  return { ...context, client };
+}
+
+/** Every dashboard this person may open, in the order the hub shows them. */
+export async function accessibleDashboards(session: Session) {
+  const where = isAdmin(session)
+    ? {}
+    : {
+        status: { not: DASHBOARD_STATUS.ARCHIVED },
+        memberships: { some: { userId: session.userId } },
+      };
+
+  return prisma.dashboard.findMany({
+    where,
+    orderBy: [{ position: "asc" }, { createdAt: "asc" }],
+    select: DASHBOARD_FIELDS,
+  });
+}
+
+/**
+ * Where someone should land after signing in.
+ *
+ * An admin gets the hub. Everyone else goes straight into their dashboard when they
+ * have exactly one — the common case, and a directory listing a single card is a click
+ * that teaches nothing.
+ */
+export async function homePathFor(session: Session): Promise<string> {
+  if (isAdmin(session)) return "/hub";
+  const dashboards = await accessibleDashboards(session);
+  if (dashboards.length === 0) return "/no-access";
+  if (dashboards.length === 1) return `/d/${dashboards[0].slug}`;
+  return "/switch";
 }

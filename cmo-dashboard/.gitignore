@@ -1,0 +1,19 @@
+.DS_Store
+Thumbs.db
+*.log
+.vscode/
+.idea/
+node_modules/
+.env
+.env.*
+!.env.example
+
+# Next.js
+/.next/
+/out/
+next-env.d.ts
+/src/generated/
+.vercel
+
+# Build artifacts
+tsconfig.tsbuildinfo

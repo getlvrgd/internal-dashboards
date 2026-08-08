@@ -1,0 +1,195 @@
+// CMO dashboard schema.
+//
+// Unlike the sales rep hub, which keeps a whole hub body as one JSON document, every
+// section here is queried on its own axis: tasks by week and by client, credentials by
+// client and by role, SOPs by category. Those are relations, not a document, so they
+// are modelled as tables.
+//
+// Two things are worth knowing before reading further:
+//
+//   * A `Task` belongs to a week, identified by `weekOf` — always the Monday, at UTC
+//     midnight. Nothing rolls over silently; see ensureWeek() in src/lib/week.ts for
+//     the one place a new week's rows are created.
+//
+//   * A `Credential` never stores a password in the clear. `secretCipher` holds an
+//     AES-256-GCM payload that only src/lib/secrets.ts can open, and only an owner or
+//     admin can reach the action that opens it.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id String @id @default(cuid())
+
+  email        String  @unique
+  name         String
+  passwordHash String
+  /// OWNER | ADMIN | CMO | VIEWER — see src/lib/options.ts
+  role         String
+  /// Deactivating is how access is revoked; the row stays so past tasks keep their owner.
+  isActive     Boolean @default(true)
+
+  createdAt DateTime @default(now())
+
+  tasks Task[]
+}
+
+/// One client / offer owner. Everything else in the app can be filtered down to one.
+model Client {
+  id   String @id @default(cuid())
+  name String
+  /// URL segment: /clients/<slug>
+  slug String @unique
+
+  /// The person on the client side who owns the offer.
+  offerOwner String?
+  niche      String?
+  /// LIVE | ONBOARDING | PAUSED | CHURNED — see src/lib/options.ts
+  status     String  @default("ONBOARDING")
+
+  /// One of the eight tile tints, so a client is recognisable at a glance in a list.
+  color String @default("blue")
+
+  /// [{ label, url }] — Drive, Trello, ad account, anything else worth one click.
+  links Json?
+
+  notes String?
+
+  /// Manual ordering in the client list; lower sorts first.
+  position Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tasks       Task[]
+  credentials Credential[]
+
+  @@index([status])
+}
+
+/// One line on the weekly board, or one quick capture on the to-do list.
+model Task {
+  id    String  @id @default(cuid())
+  title String
+  notes String?
+
+  /// 0 = Monday … 6 = Sunday. Null means it sits on the to-do list rather than a day.
+  day Int?
+
+  /// The Monday of the week this belongs to, at UTC midnight. Null for to-dos, which
+  /// are not bound to a week and stay put until they are ticked off.
+  weekOf DateTime?
+
+  clientId String?
+  client   Client? @relation(fields: [clientId], references: [id], onDelete: SetNull)
+
+  assigneeId String?
+  assignee   User?   @relation(fields: [assigneeId], references: [id], onDelete: SetNull)
+
+  /// NOT_STARTED | IN_PROGRESS | DONE | BLOCKED — see src/lib/options.ts
+  status   String @default("NOT_STARTED")
+  /// LOW | NORMAL | HIGH
+  priority String @default("NORMAL")
+
+  dueDate DateTime?
+
+  /// Marked as part of the standing weekly routine. ensureWeek() clones these forward
+  /// into each new week; everything else is carried over only if it is unfinished.
+  recurring Boolean @default(false)
+
+  /// Set the moment status becomes DONE, so "finished this week" is answerable without
+  /// keeping an event log.
+  completedAt DateTime?
+
+  position Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([weekOf, day])
+  @@index([clientId])
+  @@index([status])
+}
+
+/// A grouping on the SOP board — Ads, YouTube, VSL Funnel and so on. A table rather
+/// than a string on Sop so the tabs can be renamed and reordered without touching rows.
+model SopCategory {
+  id       String @id @default(cuid())
+  name     String @unique
+  position Int    @default(0)
+
+  sops Sop[]
+}
+
+model Sop {
+  id    String @id @default(cuid())
+  title String
+  /// The funnel or objective this covers, e.g. "Cold > VSL".
+  objective String?
+  url       String?
+  summary   String?
+
+  categoryId String
+  category   SopCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  position Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([categoryId])
+}
+
+/// A login. Company-wide when `clientId` is null, otherwise tied to one client.
+///
+/// The password is never stored or returned in the clear: `secretCipher` is sealed by
+/// src/lib/secrets.ts and opened only by an explicit reveal action, which checks the
+/// caller is an owner or admin first. Listing credentials does not decrypt anything.
+model Credential {
+  id String @id @default(cuid())
+
+  /// The tool or hosting service: Gmail, Kit, GoDaddy, Calendly…
+  service String
+  url     String?
+  /// The email or username the account signs in with.
+  identity String?
+
+  /// AES-256-GCM, base64, as written by seal() in src/lib/secrets.ts.
+  secretCipher String?
+
+  notes String?
+
+  clientId String?
+  client   Client? @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  position Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([clientId])
+}
+
+/// A number on the top row of the dashboard — MRR, ad spend, booked calls. Kept by
+/// hand: this dashboard is a control surface, not an analytics pipeline, and a figure
+/// someone typed after checking the source beats a stale automatic one.
+model Kpi {
+  id    String @id @default(cuid())
+  label String
+  /// Free text, so "12.4k", "3.2%" and "£8,400" all sit in the same row.
+  value String @default("—")
+  /// Shown under the figure, e.g. "vs 9.1k last month".
+  sublabel String?
+  /// One of the eight tile tints.
+  color String @default("blue")
+
+  position Int @default(0)
+
+  updatedAt DateTime @updatedAt
+}

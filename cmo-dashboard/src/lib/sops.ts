@@ -2,9 +2,10 @@
  * The SOP library's shape.
  *
  * This is the sales rep hub's content model, brought across so the two products are
- * edited the same way. A library is a document, not a table:
+ * edited the same way — flattened by one level, because an area holding pages holding
+ * blocks was a layer of grouping nobody used:
  *
- *     content → sections[] → pages[] → blocks[]
+ *     content → pages[] → blocks[]
  *
  * The board this replaces was a flat list of title + URL under a category, which meant
  * an SOP could only ever *point* somewhere. Most of them are not a link — they are a
@@ -93,14 +94,8 @@ export type SopPage = {
   blocks: SopBlock[];
 };
 
-export type SopSection = {
-  id: string;
-  title: string;
-  pages: SopPage[];
-};
-
 export type SopContent = {
-  sections: SopSection[];
+  pages: SopPage[];
 };
 
 /* ------------------------------------------------------------------ counting -- */
@@ -133,14 +128,12 @@ export function countLinks(content: SopContent | null | undefined) {
   let total = 0;
   let done = 0;
 
-  for (const section of content?.sections ?? []) {
-    for (const page of section.pages ?? []) {
-      for (const block of page.blocks ?? []) {
-        const url = linkTarget(block);
-        if (url === null) continue;
-        total += 1;
-        if (url) done += 1;
-      }
+  for (const page of content?.pages ?? []) {
+    for (const block of page.blocks ?? []) {
+      const url = linkTarget(block);
+      if (url === null) continue;
+      total += 1;
+      if (url) done += 1;
     }
   }
 
@@ -149,9 +142,7 @@ export function countLinks(content: SopContent | null | undefined) {
 
 /** Every block in a library, flattened — used for counts and search. */
 export function allBlocks(content: SopContent | null | undefined): SopBlock[] {
-  return (content?.sections ?? []).flatMap((s) =>
-    (s.pages ?? []).flatMap((p) => p.blocks ?? []),
-  );
+  return (content?.pages ?? []).flatMap((p) => p.blocks ?? []);
 }
 
 /* ------------------------------------------------------------------- parsing -- */
@@ -209,39 +200,66 @@ function parseBlock(raw: unknown): SopBlock | null {
  * or a document written by an older version of this file must not be able to crash a
  * page. Anything unrecognised is dropped, and a missing document reads as empty.
  */
-export function parseSopContent(raw: unknown): SopContent {
-  if (!raw || typeof raw !== "object") return { sections: [] };
-  const sections = (raw as Record<string, unknown>).sections;
-  if (!Array.isArray(sections)) return { sections: [] };
-
+function parsePage(raw: unknown): SopPage | null {
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw as Record<string, unknown>;
+  const blocks = Array.isArray(o.blocks) ? o.blocks : [];
   return {
-    sections: sections
-      .map((s): SopSection | null => {
-        if (!s || typeof s !== "object") return null;
-        const o = s as Record<string, unknown>;
-        const pages = Array.isArray(o.pages) ? o.pages : [];
-        return {
-          id: str(o.id) || newId(),
-          title: str(o.title) || "Untitled",
-          pages: pages
-            .map((p): SopPage | null => {
-              if (!p || typeof p !== "object") return null;
-              const q = p as Record<string, unknown>;
-              const blocks = Array.isArray(q.blocks) ? q.blocks : [];
-              return {
-                id: str(q.id) || newId(),
-                title: str(q.title) || "Untitled",
-                summary: optional(q.summary),
-                blocks: blocks
-                  .map(parseBlock)
-                  .filter((b): b is SopBlock => b !== null),
-              };
-            })
-            .filter((p): p is SopPage => p !== null),
-        };
-      })
-      .filter((s): s is SopSection => s !== null),
+    id: str(o.id) || newId(),
+    title: str(o.title) || "Untitled",
+    summary: optional(o.summary),
+    blocks: blocks.map(parseBlock).filter((b): b is SopBlock => b !== null),
   };
+}
+
+/**
+ * Reads a stored document back.
+ *
+ * Everything is coerced rather than trusted: the column is JSON, so a hand-edited row
+ * or a document written by an older version of this file must not be able to crash a
+ * page. Anything unrecognised is dropped, and a missing document reads as empty.
+ *
+ * Documents saved before areas were removed are flattened here rather than by a data
+ * migration — the shape is JSON, so the reader is the only place that has to know about
+ * the old layout, and nothing has to be rewritten in place. A one-page area becomes a
+ * page under the AREA's name, since that was the meaningful word ("YouTube", not
+ * "Publishing"); an area with several pages keeps its pages, which were already
+ * distinct.
+ */
+export function parseSopContent(raw: unknown): SopContent {
+  if (!raw || typeof raw !== "object") return { pages: [] };
+  const root = raw as Record<string, unknown>;
+
+  if (Array.isArray(root.pages)) {
+    return {
+      pages: root.pages
+        .map(parsePage)
+        .filter((p): p is SopPage => p !== null),
+    };
+  }
+
+  if (Array.isArray(root.sections)) {
+    const pages: SopPage[] = [];
+    for (const section of root.sections) {
+      if (!section || typeof section !== "object") continue;
+      const o = section as Record<string, unknown>;
+      const sectionTitle = str(o.title) || "Untitled";
+      const parsed = (Array.isArray(o.pages) ? o.pages : [])
+        .map(parsePage)
+        .filter((p): p is SopPage => p !== null);
+
+      if (parsed.length === 0) {
+        pages.push({ id: newId(), title: sectionTitle, blocks: [] });
+      } else if (parsed.length === 1) {
+        pages.push({ ...parsed[0], title: sectionTitle });
+      } else {
+        pages.push(...parsed);
+      }
+    }
+    return { pages };
+  }
+
+  return { pages: [] };
 }
 
 /* ------------------------------------------------------------------ template -- */
@@ -249,41 +267,37 @@ export function parseSopContent(raw: unknown): SopContent {
 /**
  * What a new dashboard's SOP library starts from.
  *
- * These are the tabs the Notion board this replaces used, kept in the same order, with
- * one page each and the links left blank. Editing this changes what NEW dashboards are
+ * One page per area the Notion board this replaces used, in the same order, with the
+ * links left blank. Editing this changes what NEW dashboards are
  * created with; existing ones keep their own copy in the database, so nothing here
  * rewrites work already done.
  */
-const STARTER_SECTIONS: { title: string; pages: string[] }[] = [
-  { title: "Ads", pages: ["Cold → VSL", "Cold → Webinar", "Retargeting"] },
-  { title: "YouTube", pages: ["Publishing"] },
-  { title: "Instagram", pages: ["Publishing"] },
-  { title: "VSL Funnel", pages: ["Build & launch"] },
-  { title: "Calls", pages: ["Booking & show-up"] },
-  { title: "Webinar", pages: ["Run of show"] },
-  { title: "Waitlist", pages: ["Capture & nurture"] },
-  { title: "Messaging", pages: ["Positioning"] },
+const STARTER_PAGES = [
+  "Ads",
+  "YouTube",
+  "Instagram",
+  "VSL Funnel",
+  "Calls",
+  "Webinar",
+  "Waitlist",
+  "Messaging",
 ];
 
 export function starterSopContent(): SopContent {
   return {
-    sections: STARTER_SECTIONS.map((section) => ({
+    pages: STARTER_PAGES.map((title) => ({
       id: newId(),
-      title: section.title,
-      pages: section.pages.map((title) => ({
-        id: newId(),
-        title,
-        blocks: [
-          {
-            id: newId(),
-            type: "link" as const,
-            title: "SOP document",
-            badge: "DOC" as Badge,
-            url: "",
-            description: "The written procedure.",
-          },
-        ],
-      })),
+      title,
+      blocks: [
+        {
+          id: newId(),
+          type: "link" as const,
+          title: "SOP document",
+          badge: "DOC" as Badge,
+          url: "",
+          description: "The written procedure.",
+        },
+      ],
     })),
   };
 }

@@ -11,7 +11,6 @@ import {
   type SopBlock,
   type SopContent,
   type SopPage,
-  type SopSection,
 } from "@/lib/sops";
 
 import { EmptyNote, ghostButtonClass, inputClass, primaryButtonClass } from "./ui";
@@ -56,8 +55,8 @@ export function BlockLibrary({
     setDirty(true);
   };
 
-  const mapSections = (fn: (sections: SopSection[]) => SopSection[]) =>
-    update({ ...content, sections: fn(content.sections) });
+  const mapPages = (fn: (pages: SopPage[]) => SopPage[]) =>
+    update({ ...content, pages: fn(content.pages) });
 
   const save = () => {
     setError(null);
@@ -98,14 +97,14 @@ export function BlockLibrary({
               </button>
               <button
                 onClick={() =>
-                  mapSections((s) => [
-                    ...s,
-                    { id: newId(), title: "New area", pages: [] },
+                  mapPages((p) => [
+                    ...p,
+                    { id: newId(), title: "New page", blocks: [] },
                   ])
                 }
                 className={ghostButtonClass}
               >
-                + Area
+                + Page
               </button>
               {dirty && (
                 <span className="text-[12px] text-ink-muted">
@@ -133,48 +132,44 @@ export function BlockLibrary({
 
       {/* Section jump list. Links rather than tabs, so nothing is hidden — the point is
           being able to see that an area has gone thin. */}
-      {content.sections.length > 1 && !editing && (
+      {content.pages.length > 1 && !editing && (
         <nav className="scroll-x mb-6 flex gap-1.5 pb-1">
-          {content.sections.map((section) => (
+          {content.pages.map((page) => (
             <a
-              key={section.id}
-              href={`#${section.id}`}
+              key={page.id}
+              href={`#${page.id}`}
               className="shrink-0 rounded-full border border-subtle px-2.5 py-1 text-[12px] font-semibold text-ink-secondary transition-colors hover:border-strong hover:text-ink"
             >
-              {section.title}
+              {page.title}
               <span className="ml-1 text-ink-muted tabular">
-                {section.pages.reduce((n, p) => n + p.blocks.length, 0)}
+                {page.blocks.length}
               </span>
             </a>
           ))}
         </nav>
       )}
 
-      {content.sections.length === 0 ? (
+      {content.pages.length === 0 ? (
         <EmptyNote>
           {emptyNote}
-          {canEdit && " Use “Edit” to add the first area."}
+          {canEdit && " Use “Edit” to add the first page."}
         </EmptyNote>
       ) : (
         <div className="space-y-8">
-          {content.sections.map((section, sectionIndex) => (
-            <SectionView
-              key={section.id}
-              section={section}
+          {content.pages.map((page, pageIndex) => (
+            <PageView
+              key={page.id}
+              page={page}
               editing={editing}
               onChange={(next) =>
-                mapSections((s) =>
-                  s.map((x, i) => (i === sectionIndex ? next : x)),
-                )
+                mapPages((p) => p.map((x, i) => (i === pageIndex ? next : x)))
               }
               onRemove={() =>
-                mapSections((s) => s.filter((_, i) => i !== sectionIndex))
+                mapPages((p) => p.filter((_, i) => i !== pageIndex))
               }
-              onMove={(delta) =>
-                mapSections((s) => move(s, sectionIndex, delta))
-              }
-              first={sectionIndex === 0}
-              last={sectionIndex === content.sections.length - 1}
+              onMove={(delta) => mapPages((p) => move(p, pageIndex, delta))}
+              first={pageIndex === 0}
+              last={pageIndex === content.pages.length - 1}
             />
           ))}
         </div>
@@ -190,104 +185,6 @@ function move<T>(list: T[], index: number, delta: number): T[] {
   const next = [...list];
   [next[index], next[target]] = [next[target], next[index]];
   return next;
-}
-
-function SectionView({
-  section,
-  editing,
-  onChange,
-  onRemove,
-  onMove,
-  first,
-  last,
-}: {
-  section: SopSection;
-  editing: boolean;
-  onChange: (next: SopSection) => void;
-  onRemove: () => void;
-  onMove: (delta: number) => void;
-  first: boolean;
-  last: boolean;
-}) {
-  const setPages = (pages: SopPage[]) => onChange({ ...section, pages });
-
-  return (
-    <section id={section.id} className="scroll-mt-20">
-      <div className="mb-3 flex flex-wrap items-center gap-2 border-b border-subtle pb-2">
-        {editing ? (
-          <input
-            value={section.title}
-            onChange={(e) => onChange({ ...section, title: e.target.value })}
-            className={`${inputClass} flex-1 font-bold`}
-            aria-label="Area name"
-          />
-        ) : (
-          <h2 className="flex-1 text-[17px] font-bold tracking-tight">
-            {section.title}
-          </h2>
-        )}
-
-        <span className="text-[12px] text-ink-muted tabular">
-          {section.pages.reduce((n, p) => n + p.blocks.length, 0)}
-        </span>
-
-        {editing && (
-          <span className="flex items-center gap-1">
-            <IconButton label="Move area up" onClick={() => onMove(-1)} disabled={first}>
-              ↑
-            </IconButton>
-            <IconButton label="Move area down" onClick={() => onMove(1)} disabled={last}>
-              ↓
-            </IconButton>
-            <button
-              onClick={() =>
-                setPages([
-                  ...section.pages,
-                  { id: newId(), title: "New page", blocks: [] },
-                ])
-              }
-              className={ghostButtonClass}
-            >
-              + Page
-            </button>
-            <button
-              onClick={() => {
-                if (window.confirm(`Delete “${section.title}” and its pages?`)) {
-                  onRemove();
-                }
-              }}
-              className="text-[12px] font-semibold text-critical underline-offset-2 hover:underline"
-            >
-              Delete
-            </button>
-          </span>
-        )}
-      </div>
-
-      {section.pages.length === 0 ? (
-        <EmptyNote>Nothing in this area yet.</EmptyNote>
-      ) : (
-        <div className="space-y-4">
-          {section.pages.map((page, pageIndex) => (
-            <PageView
-              key={page.id}
-              page={page}
-              editing={editing}
-              onChange={(next) =>
-                setPages(section.pages.map((p, i) => (i === pageIndex ? next : p)))
-              }
-              onRemove={() =>
-                setPages(section.pages.filter((_, i) => i !== pageIndex))
-              }
-              onMove={(delta) => setPages(move(section.pages, pageIndex, delta))}
-              first={pageIndex === 0}
-              last={pageIndex === section.pages.length - 1}
-            />
-          ))}
-        </div>
-      )}
-    </section>
-  );
 }
 
 function PageView({
@@ -330,8 +227,8 @@ function PageView({
     ]);
 
   return (
-    <article className="rounded-xl border border-subtle bg-surface p-4">
-      <header className="mb-3 flex flex-wrap items-start gap-2">
+    <article id={page.id} className="scroll-mt-20">
+      <header className="mb-3 flex flex-wrap items-start gap-2 border-b border-subtle pb-2">
         <div className="min-w-0 flex-1">
           {editing ? (
             <div className="space-y-1.5">
@@ -353,7 +250,7 @@ function PageView({
             </div>
           ) : (
             <>
-              <h3 className="text-[15px] font-bold tracking-tight">
+              <h3 className="text-[17px] font-bold tracking-tight">
                 {page.title}
               </h3>
               {page.summary && (
@@ -367,15 +264,21 @@ function PageView({
 
         {editing && (
           <span className="flex shrink-0 items-center gap-1">
-            <IconButton label="Move page up" onClick={() => onMove(-1)} disabled={first}>
+            <IconButton label="Move up" onClick={() => onMove(-1)} disabled={first}>
               ↑
             </IconButton>
-            <IconButton label="Move page down" onClick={() => onMove(1)} disabled={last}>
+            <IconButton label="Move down" onClick={() => onMove(1)} disabled={last}>
               ↓
             </IconButton>
             <button
               onClick={() => {
-                if (window.confirm(`Delete the page “${page.title}”?`)) onRemove();
+                if (
+                  window.confirm(
+                    `Delete “${page.title}” and everything on it?`,
+                  )
+                ) {
+                  onRemove();
+                }
               }}
               className="text-[12px] font-semibold text-critical underline-offset-2 hover:underline"
             >

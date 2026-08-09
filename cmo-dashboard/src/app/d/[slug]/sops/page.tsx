@@ -41,8 +41,8 @@ export default async function SopsPage({
           <h1 className="text-[22px] font-bold tracking-tight">SOPs</h1>
           <p className="mt-0.5 text-[13px] text-ink-secondary tabular">
             {blocks} {blocks === 1 ? "entry" : "entries"} across{" "}
-            {content.sections.length}{" "}
-            {content.sections.length === 1 ? "area" : "areas"}
+            {content.pages.length}{" "}
+            {content.pages.length === 1 ? "page" : "pages"}
             {fill.total > 0 && ` · ${fill.done}/${fill.total} links filled`}
           </p>
         </div>

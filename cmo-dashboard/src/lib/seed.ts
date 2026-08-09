@@ -71,7 +71,7 @@ export async function createDashboardWithContent(input: {
       const parsed = parseSopContent(source.sopContent);
       // An empty library is not worth copying — fall back to the starter, or the new
       // dashboard begins with no SOP structure at all.
-      if (parsed.sections.length > 0) sopContent = parsed;
+      if (parsed.pages.length > 0) sopContent = parsed;
       if (source.kpis.length > 0) {
         kpis = source.kpis.map((k) => ({
           label: k.label,

@@ -189,3 +189,51 @@ export async function setMembership(dashboardSlug: string, formData: FormData) {
   revalidatePath("/hub/people");
   revalidatePath("/hub");
 }
+
+/**
+ * Grants, changes or removes a dashboard from the roster page.
+ *
+ * The same decision as setMembership(), reached from the other direction: that one is
+ * "who is on this dashboard", this one is "which dashboards is this person on". Admin
+ * only, because the roster spans every dashboard — a manager grants from their own
+ * dashboard's Team page, where the grant cannot reach past its edge.
+ *
+ * A `role` of "" removes the grant.
+ */
+export async function setMembershipFromRoster(formData: FormData) {
+  await requireAdmin();
+
+  const userId = String(formData.get("userId") ?? "");
+  const dashboardId = String(formData.get("dashboardId") ?? "");
+  const role = String(formData.get("role") ?? "");
+  if (!userId || !dashboardId) return;
+
+  const [user, dashboard] = await Promise.all([
+    prisma.user.findUnique({ where: { id: userId }, select: { role: true } }),
+    prisma.dashboard.findUnique({
+      where: { id: dashboardId },
+      select: { id: true, slug: true },
+    }),
+  ]);
+  if (!user || !dashboard) return;
+
+  // Owners and admins reach everything by platform role. Writing a row for them would
+  // be a second source of truth that could disagree with the first.
+  if (user.role === ROLES.OWNER || user.role === ROLES.ADMIN) return;
+
+  if (!role) {
+    await prisma.membership.deleteMany({
+      where: { userId, dashboardId: dashboard.id },
+    });
+  } else if (ALL_MEMBERSHIP_ROLES.includes(role)) {
+    await prisma.membership.upsert({
+      where: { userId_dashboardId: { userId, dashboardId: dashboard.id } },
+      create: { userId, dashboardId: dashboard.id, role },
+      update: { role },
+    });
+  }
+
+  revalidatePath("/hub/people");
+  revalidatePath("/hub");
+  revalidatePath(`/d/${dashboard.slug}/team`);
+}

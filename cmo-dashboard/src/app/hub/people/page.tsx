@@ -3,6 +3,7 @@ import Link from "next/link";
 import {
   resetPassword,
   setActive,
+  setMembershipFromRoster,
   setPlatformRole,
 } from "@/app/actions/people";
 import { AddPersonForm } from "@/components/AddPersonForm";
@@ -14,7 +15,8 @@ import { requireAdmin } from "@/lib/access";
 import { prisma } from "@/lib/db";
 import {
   ASSIGNABLE_ROLES,
-  membershipRoleLabel,
+  MEMBERSHIP_ROLE_OPTIONS,
+  MEMBERSHIP_ROLES,
   roleLabel,
   ROLES,
 } from "@/lib/options";
@@ -45,6 +47,7 @@ export default async function PeoplePage() {
         memberships: {
           select: {
             role: true,
+            dashboardId: true,
             dashboard: { select: { name: true, slug: true } },
           },
         },
@@ -141,18 +144,83 @@ export default async function PeoplePage() {
                 )}
               </div>
 
-              <p className="mt-1.5 text-[12px] text-ink-muted">
-                {person.role === ROLES.OWNER || person.role === ROLES.ADMIN
-                  ? "Reaches every dashboard."
-                  : person.memberships.length === 0
-                    ? "No dashboards yet."
-                    : person.memberships
-                        .map(
-                          (m) =>
-                            `${m.dashboard.name} (${membershipRoleLabel(m.role)})`,
-                        )
-                        .join(" · ")}
-              </p>
+              {person.role === ROLES.OWNER || person.role === ROLES.ADMIN ? (
+                <p className="mt-1.5 text-[12px] text-ink-muted">
+                  Reaches every dashboard.
+                </p>
+              ) : (
+                <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                  {person.memberships.length === 0 && (
+                    <span className="text-[12px] text-ink-muted">
+                      No dashboards yet.
+                    </span>
+                  )}
+
+                  {person.memberships.map((m) => (
+                    <form
+                      key={m.dashboard.slug}
+                      action={setMembershipFromRoster}
+                      className="flex items-center gap-1 rounded-full border border-subtle py-0.5 pr-1 pl-2.5"
+                    >
+                      <input type="hidden" name="userId" value={person.id} />
+                      <input
+                        type="hidden"
+                        name="dashboardId"
+                        value={m.dashboardId}
+                      />
+                      <span className="text-[12px] font-semibold">
+                        {m.dashboard.name}
+                      </span>
+                      <AutoSubmitSelect
+                        name="role"
+                        value={m.role}
+                        options={[
+                          ...MEMBERSHIP_ROLE_OPTIONS,
+                          { value: "", label: "Remove" },
+                        ]}
+                        ariaLabel={`${person.name} on ${m.dashboard.name}`}
+                        className="bg-transparent text-[12px] text-ink-secondary"
+                      />
+                    </form>
+                  ))}
+
+                  {/* Everything they are not on yet. Choosing one grants Member, which
+                      the chip above can then change — one control for the common case
+                      rather than two for every case. */}
+                  {dashboards.filter(
+                    (d) => !person.memberships.some((m) => m.dashboardId === d.id),
+                  ).length > 0 && (
+                    <form
+                      action={setMembershipFromRoster}
+                      className="flex items-center"
+                    >
+                      <input type="hidden" name="userId" value={person.id} />
+                      <input
+                        type="hidden"
+                        name="role"
+                        value={MEMBERSHIP_ROLES.MEMBER}
+                      />
+                      <AutoSubmitSelect
+                        name="dashboardId"
+                        value=""
+                        options={[
+                          { value: "", label: "+ Add to a dashboard…" },
+                          ...dashboards
+                            .filter(
+                              (d) =>
+                                !person.memberships.some(
+                                  (m) => m.dashboardId === d.id,
+                                ),
+                            )
+                            .map((d) => ({ value: d.id, label: d.name })),
+                        ]}
+                        ariaLabel={`Add ${person.name} to a dashboard`}
+                        className="rounded-full border border-dashed border-strong px-2.5 py-1 text-[12px] font-semibold text-ink-muted"
+                      />
+                    </form>
+                  )}
+                </div>
+              )}
 
               {!isOwner && (
                 <details className="group mt-1.5">

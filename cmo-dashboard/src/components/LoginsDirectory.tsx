@@ -93,29 +93,29 @@ export function LoginsDirectory({
             action={createCredential.bind(null, dashboardSlug)}
             className="mt-3 grid gap-2 rounded-xl border border-subtle bg-surface p-3 sm:grid-cols-2"
           >
-            {/* Which offer this login belongs to. Every offer has different accounts,
-                so filing it correctly is what makes the panel on that offer's page
-                complete. Defaults to the offer being looked at. */}
-            {offers.length > 1 ? (
-              <label className="block sm:col-span-2">
-                <span className="text-[10px] font-bold tracking-widest text-ink-muted uppercase">
-                  Offer
-                </span>
-                <select
-                  name="clientId"
-                  defaultValue={clientId}
-                  className={`${inputClass} mt-1 w-full`}
-                >
-                  {offers.map((offer) => (
-                    <option key={offer.id} value={offer.id}>
-                      {offer.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ) : (
-              <input type="hidden" name="clientId" value={clientId} />
-            )}
+            {/* Which offer this login belongs to, always shown — a login is only
+                useful filed against the right offer, and a control that appears once
+                there are two offers is one nobody learns is there. Defaults to the
+                offer being looked at, so the common case is still one glance. */}
+            <label className="block sm:col-span-2">
+              <span className="text-[10px] font-bold tracking-widest text-ink-muted uppercase">
+                Offer this login belongs to
+              </span>
+              <select
+                name="clientId"
+                defaultValue={clientId}
+                className={`${inputClass} mt-1 w-full`}
+              >
+                {(offers.length > 0
+                  ? offers
+                  : [{ id: clientId, name: clientName }]
+                ).map((offer) => (
+                  <option key={offer.id} value={offer.id}>
+                    {offer.name}
+                  </option>
+                ))}
+              </select>
+            </label>
             <PresetFields presets={presets} />
             <input
               name="identity"

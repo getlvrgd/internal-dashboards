@@ -85,6 +85,8 @@ export type DashboardContext = {
     color: string;
     isTemplate: boolean;
     sopContent: unknown;
+    boardLayout: unknown;
+    revenueGoalCents: number;
   };
   /** MANAGER for owners and admins; otherwise whatever the Membership says. */
   role: string;
@@ -105,6 +107,8 @@ const DASHBOARD_FIELDS = {
   color: true,
   isTemplate: true,
   sopContent: true,
+  boardLayout: true,
+  revenueGoalCents: true,
 } as const;
 
 /**

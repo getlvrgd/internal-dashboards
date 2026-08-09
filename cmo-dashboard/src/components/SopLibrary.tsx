@@ -313,7 +313,9 @@ function PageView({
               ? "Notes"
               : type === "video"
                 ? "Walkthrough"
-                : "New entry",
+                : type === "call"
+                  ? "Standing call"
+                  : "New entry",
         ...(type === "tasks" ? { tasks: ["First step"] } : {}),
       },
     ]);
@@ -399,7 +401,7 @@ function PageView({
 
       {editing && (
         <div className="mt-3 flex flex-wrap gap-1.5 border-t border-subtle pt-3">
-          {(["link", "video", "text", "tasks"] as const).map((type) => (
+          {(["link", "video", "call", "text", "tasks"] as const).map((type) => (
             <button
               key={type}
               onClick={() => addBlock(type)}
@@ -522,6 +524,38 @@ function BlockView({
             </>
           )}
 
+          {block.type === "call" && (
+            <>
+              <input
+                value={block.time ?? ""}
+                onChange={(e) =>
+                  onChange({ ...block, time: e.target.value || undefined })
+                }
+                placeholder="Every weekday at 9:00am"
+                className={inputClass}
+                aria-label="When"
+              />
+              <input
+                value={block.url ?? ""}
+                onChange={(e) =>
+                  onChange({ ...block, url: e.target.value || undefined })
+                }
+                placeholder="https:// join link"
+                className={inputClass}
+                aria-label="Join link"
+              />
+              <input
+                value={block.description ?? ""}
+                onChange={(e) =>
+                  onChange({ ...block, description: e.target.value || undefined })
+                }
+                placeholder="Who runs it, what it covers"
+                className={`${inputClass} sm:col-span-2`}
+                aria-label="Description"
+              />
+            </>
+          )}
+
           {block.type === "text" && (
             <textarea
               value={block.body ?? ""}
@@ -584,6 +618,39 @@ function BlockView({
             </li>
           ))}
         </ul>
+      </div>
+    );
+  }
+
+  if (block.type === "call") {
+    const joinHref = block.url ? safeHref(block.url) : null;
+    return (
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg border border-subtle px-3 py-2.5">
+        <span className="min-w-0 flex-1">
+          <span className="block text-[13px] font-semibold">{block.title}</span>
+          {block.time && (
+            <span className="block text-[12px] text-ink-muted">{block.time}</span>
+          )}
+          {block.description && (
+            <span className="block text-[12px] text-ink-muted">
+              {block.description}
+            </span>
+          )}
+        </span>
+        {joinHref ? (
+          <a
+            href={joinHref}
+            target="_blank"
+            rel="noreferrer noopener"
+            className="shrink-0 rounded-full bg-ink px-3 py-1.5 text-[12px] font-bold text-page"
+          >
+            Join
+          </a>
+        ) : (
+          <span className="shrink-0 text-[12px] text-ink-muted">
+            No link set
+          </span>
+        )}
       </div>
     );
   }

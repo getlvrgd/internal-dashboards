@@ -50,10 +50,11 @@ export const isBadge = (value: unknown): value is Badge =>
  *   video  an embedded player, with body text and extra links underneath
  *   text   a written note: heading and body, no link of its own
  *   tasks  a checklist the owner writes and everyone else ticks off
+ *   call   a standing call: when it happens, and a link that joins it
  */
 export type SopBlock = {
   id: string;
-  type: "link" | "video" | "text" | "tasks";
+  type: "link" | "video" | "text" | "tasks" | "call";
   /** Title */
   title: string;
   /** Badge — DOC / LOOM / FORM / … */
@@ -66,6 +67,8 @@ export type SopBlock = {
   embed?: string;
   /** Longer written text, shown under a video or as the body of a text block. */
   body?: string;
+  /** When a call happens. Free text, so "Every weekday at 9:00am" is as valid as a date. */
+  time?: string;
   /** Extra links shown beneath — the SOP doc alongside a walkthrough, for instance. */
   links?: SopLink[];
   /**
@@ -114,6 +117,9 @@ export function linkTarget(block: SopBlock): string | null {
     case "text":
     case "tasks":
       return null;
+    case "call":
+      // A call with no join link is a link left blank, so it counts.
+      return block.url ?? "";
     case "video":
       // The player is the point; `url` is only a fallback.
       return block.embed || block.url || "";
@@ -166,7 +172,9 @@ function parseBlock(raw: unknown): SopBlock | null {
 
   const type = r.type;
   const kind: SopBlock["type"] =
-    type === "video" || type === "text" || type === "tasks" ? type : "link";
+    type === "video" || type === "text" || type === "tasks" || type === "call"
+      ? type
+      : "link";
 
   return {
     id: str(r.id) || newId(),
@@ -177,6 +185,7 @@ function parseBlock(raw: unknown): SopBlock | null {
     description: optional(r.description),
     embed: optional(r.embed),
     body: optional(r.body),
+    time: optional(r.time),
     links: Array.isArray(r.links)
       ? r.links
           .map((l) => {

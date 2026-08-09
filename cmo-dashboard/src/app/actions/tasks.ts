@@ -280,6 +280,57 @@ export async function deleteTask(dashboardSlug: string, formData: FormData) {
 }
 
 /**
+ * Drops a task into a day, at a position.
+ *
+ * `day` of null moves it to the to-do list, which also clears its week — a to-do is
+ * defined by having no day, and leaving `weekOf` set would make it reappear on the
+ * board the moment someone gave it a day again.
+ *
+ * Positions in the destination are rewritten rather than nudged: rows created before
+ * ordering mattered all sit at 0, and inserting into a block of ties moves nothing.
+ */
+export async function moveTask(
+  dashboardSlug: string,
+  taskId: string,
+  day: number | null,
+  index: number,
+  week: string,
+) {
+  const { dashboard } = await requireDashboardWrite(dashboardSlug);
+
+  const task = await ownedTask(taskId, dashboard.id, { day: true });
+  if (!task) return;
+  if (day !== null && (!Number.isInteger(day) || day < 0 || day > 6)) return;
+
+  const weekOf = day === null ? null : parseWeekParam(week);
+
+  const siblings = await prisma.task.findMany({
+    where: { dashboardId: dashboard.id, weekOf, day, id: { not: task.id } },
+    orderBy: [{ position: "asc" }, { createdAt: "asc" }],
+    select: { id: true },
+  });
+
+  const at = Math.max(0, Math.min(index, siblings.length));
+  const ordered = [
+    ...siblings.slice(0, at).map((s) => s.id),
+    task.id,
+    ...siblings.slice(at).map((s) => s.id),
+  ];
+
+  await prisma.$transaction([
+    prisma.task.update({
+      where: { id: task.id },
+      data: { day, weekOf, recurring: day === null ? false : undefined },
+    }),
+    ...ordered.map((id, position) =>
+      prisma.task.update({ where: { id }, data: { position } }),
+    ),
+  ]);
+
+  revalidatePath(`/d/${dashboardSlug}`);
+}
+
+/**
  * Sweeps last week's unfinished one-offs into the week on screen.
  *
  * Deliberately a button rather than something ensureWeek() does on its own: silently

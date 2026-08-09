@@ -91,6 +91,18 @@ model Dashboard {
   /// Shape and defaults live in src/lib/sops.ts.
   sopContent Json?
 
+  /// Which panels the board shows, in what order, under what heading.
+  ///
+  /// The board is not a fixed page any more: progress, revenue, the to-do list, the
+  /// week and the calls are panels you drag into the order you want and retitle. Order
+  /// and headings are per dashboard, so an ops board can lead with calls while the CMO
+  /// board leads with the week. Shape and defaults live in src/lib/board.ts.
+  boardLayout Json?
+
+  /// Daily revenue target, in cents. 0 means no goal has been set, and the revenue
+  /// panel shows the day's total without a percentage.
+  revenueGoalCents Int @default(0)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -98,8 +110,64 @@ model Dashboard {
   tasks       Task[]
   kpis        Kpi[]
   memberships Membership[]
+  payments    Payment[]
+  calls       Call[]
 
   @@index([status])
+}
+
+/// One payment in. Logged by hand for now.
+///
+/// `clientId` is optional and nothing reads it yet — it is here so that when revenue
+/// starts arriving per client, the rows already carry the attribution rather than
+/// needing a backfill nobody can do accurately after the fact.
+model Payment {
+  id String @id @default(cuid())
+
+  dashboardId String
+  dashboard   Dashboard @relation(fields: [dashboardId], references: [id], onDelete: Cascade)
+
+  /// Cents, as an integer. No float ever touches money — 0.1 + 0.2 is not 0.3, and a
+  /// revenue figure that is a penny out is a revenue figure nobody trusts.
+  amountCents Int
+
+  note String?
+
+  clientId String?
+  client   Client? @relation(fields: [clientId], references: [id], onDelete: SetNull)
+
+  /// When the money landed, which is not always when it was typed in.
+  receivedAt DateTime @default(now())
+
+  createdAt DateTime @default(now())
+
+  @@index([dashboardId, receivedAt])
+  @@index([clientId])
+}
+
+/// A standing call — the daily stand-up, the weekly review.
+///
+/// `time` is free text on purpose: "Every weekday at 9:00am" is what someone actually
+/// wants to read, and modelling a recurrence rule would mean a scheduler, a timezone
+/// per person and a UI for all of it, to render a sentence.
+model Call {
+  id String @id @default(cuid())
+
+  dashboardId String
+  dashboard   Dashboard @relation(fields: [dashboardId], references: [id], onDelete: Cascade)
+
+  title String
+  /// The join link. One click from the board into the call is the whole point.
+  url   String?
+  time  String?
+  notes String?
+
+  position Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([dashboardId])
 }
 
 /// Who can open which dashboard, and what they may do inside it.
@@ -159,6 +227,7 @@ model Client {
 
   tasks       Task[]
   credentials Credential[]
+  payments    Payment[]
 
   @@unique([dashboardId, slug])
   @@index([dashboardId, status])

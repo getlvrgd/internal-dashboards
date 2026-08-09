@@ -1,19 +1,20 @@
 import Link from "next/link";
 
 import { carryOverLastWeek } from "@/app/actions/tasks";
-import { AddTaskForm } from "@/components/AddTaskForm";
+import { BoardShell } from "@/components/BoardShell";
+import { CallsPanel } from "@/components/CallsPanel";
 import { KpiBoard } from "@/components/KpiBoard";
 import { Nav } from "@/components/Nav";
-import { TaskRow, type RowOption } from "@/components/TaskRow";
-import { Chip, EmptyNote, ghostButtonClass } from "@/components/ui";
+import { ProgressPanel } from "@/components/ProgressPanel";
+import { RevenuePanel } from "@/components/RevenuePanel";
+import { TaskList } from "@/components/TaskList";
+import type { RowOption } from "@/components/TaskRow";
+import { Chip, ghostButtonClass } from "@/components/ui";
 import { resolveDashboard } from "@/lib/access";
+import { parseBoardLayout } from "@/lib/board";
 import { prisma } from "@/lib/db";
-import {
-  DAYS,
-  dayTint,
-  TASK_STATUS,
-  taskStatusTint,
-} from "@/lib/options";
+import { daysInMonthUTC, startOfDayUTC, startOfMonthUTC } from "@/lib/money";
+import { DAYS, dayTint, TASK_STATUS } from "@/lib/options";
 import {
   addWeeks,
   countCarryable,
@@ -33,9 +34,12 @@ type Search = { week?: string; client?: string; person?: string };
 /**
  * The board.
  *
- * One week at a time, grouped by day, with the standing to-do list underneath. The week
- * is in the URL rather than in state, so a particular week is a link you can send
- * someone.
+ * No longer a fixed page: progress, revenue, numbers, the to-do list, the week and the
+ * calls are panels whose order and headings live on the dashboard, so this file decides
+ * what each panel *is* and BoardShell decides where it goes.
+ *
+ * The week is still in the URL rather than in state, so a particular week is a link you
+ * can send someone.
  */
 export default async function BoardPage({
   params: routeParams,
@@ -60,53 +64,76 @@ export default async function BoardPage({
   const clientFilter = params.client ?? "";
   const personFilter = params.person ?? "";
 
-  const [weekTasks, todos, clientRows, people, kpis, lastWeekTasks] =
-    await Promise.all([
-      prisma.task.findMany({
-        where: {
-          dashboardId: dashboard.id,
-          weekOf: monday,
-          ...(clientFilter ? { clientId: clientFilter } : {}),
-          ...(personFilter ? { assigneeId: personFilter } : {}),
-        },
-        orderBy: [{ day: "asc" }, { position: "asc" }, { createdAt: "asc" }],
-      }),
-      prisma.task.findMany({
-        where: {
-          dashboardId: dashboard.id,
-          weekOf: null,
-          ...(clientFilter ? { clientId: clientFilter } : {}),
-          ...(personFilter ? { assigneeId: personFilter } : {}),
-        },
-        orderBy: [{ position: "asc" }, { createdAt: "asc" }],
-      }),
-      prisma.client.findMany({
-        where: { dashboardId: dashboard.id, status: { not: "CHURNED" } },
-        orderBy: [{ position: "asc" }, { name: "asc" }],
-        select: { id: true, name: true, color: true },
-      }),
-      // Who a task can be assigned to: this dashboard's members, plus the owner and
-      // admins, who reach every dashboard without a membership row.
-      prisma.user.findMany({
-        where: {
-          isActive: true,
-          OR: [
-            { memberships: { some: { dashboardId: dashboard.id } } },
-            { role: { in: ["OWNER", "ADMIN"] } },
-          ],
-        },
-        orderBy: { name: "asc" },
-        select: { id: true, name: true },
-      }),
-      prisma.kpi.findMany({
-        where: { dashboardId: dashboard.id },
-        orderBy: { position: "asc" },
-      }),
-      prisma.task.findMany({
-        where: { dashboardId: dashboard.id, weekOf: addWeeks(monday, -1) },
-        select: { recurring: true, status: true },
-      }),
-    ]);
+  const now = new Date();
+  const todayStart = startOfDayUTC(now);
+  const monthStart = startOfMonthUTC(now);
+
+  const [
+    weekTasks,
+    todos,
+    clientRows,
+    people,
+    kpis,
+    lastWeekTasks,
+    calls,
+    monthPayments,
+  ] = await Promise.all([
+    prisma.task.findMany({
+      where: {
+        dashboardId: dashboard.id,
+        weekOf: monday,
+        ...(clientFilter ? { clientId: clientFilter } : {}),
+        ...(personFilter ? { assigneeId: personFilter } : {}),
+      },
+      orderBy: [{ day: "asc" }, { position: "asc" }, { createdAt: "asc" }],
+    }),
+    prisma.task.findMany({
+      where: {
+        dashboardId: dashboard.id,
+        weekOf: null,
+        ...(clientFilter ? { clientId: clientFilter } : {}),
+        ...(personFilter ? { assigneeId: personFilter } : {}),
+      },
+      orderBy: [{ position: "asc" }, { createdAt: "asc" }],
+    }),
+    prisma.client.findMany({
+      where: { dashboardId: dashboard.id, status: { not: "CHURNED" } },
+      orderBy: [{ position: "asc" }, { name: "asc" }],
+      select: { id: true, name: true, color: true },
+    }),
+    // Who a task can be assigned to: this dashboard's members, plus the owner and
+    // admins, who reach every dashboard without a membership row.
+    prisma.user.findMany({
+      where: {
+        isActive: true,
+        OR: [
+          { memberships: { some: { dashboardId: dashboard.id } } },
+          { role: { in: ["OWNER", "ADMIN"] } },
+        ],
+      },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    }),
+    prisma.kpi.findMany({
+      where: { dashboardId: dashboard.id },
+      orderBy: { position: "asc" },
+    }),
+    prisma.task.findMany({
+      where: { dashboardId: dashboard.id, weekOf: addWeeks(monday, -1) },
+      select: { recurring: true, status: true },
+    }),
+    prisma.call.findMany({
+      where: { dashboardId: dashboard.id },
+      orderBy: [{ position: "asc" }, { createdAt: "asc" }],
+    }),
+    // The whole month in one query; today's rows are filtered out of it below rather
+    // than fetched again.
+    prisma.payment.findMany({
+      where: { dashboardId: dashboard.id, receivedAt: { gte: monthStart } },
+      orderBy: { receivedAt: "desc" },
+      include: { client: { select: { name: true } } },
+    }),
+  ]);
 
   const clients: RowOption[] = clientRows.map((c) => ({
     value: c.id,
@@ -119,12 +146,23 @@ export default async function BoardPage({
   }));
 
   const done = weekTasks.filter((t) => t.status === TASK_STATUS.DONE).length;
-  const blocked = weekTasks.filter(
-    (t) => t.status === TASK_STATUS.BLOCKED,
-  ).length;
   const carryable = countCarryable(lastWeekTasks);
   const today = todayIndex(monday);
   const isCurrentWeek = monday.getTime() === thisMonday().getTime();
+
+  /* ------------------------------------------------------------- revenue -- */
+
+  const monthDays = new Array<number>(daysInMonthUTC(now)).fill(0);
+  for (const payment of monthPayments) {
+    const dayIndex = payment.receivedAt.getUTCDate() - 1;
+    if (dayIndex >= 0 && dayIndex < monthDays.length) {
+      monthDays[dayIndex] += payment.amountCents;
+    }
+  }
+  const todayPayments = monthPayments.filter(
+    (p) => startOfDayUTC(p.receivedAt).getTime() === todayStart.getTime(),
+  );
+  const todayCents = todayPayments.reduce((sum, p) => sum + p.amountCents, 0);
 
   const href = (next: Partial<Search>) => {
     const query = new URLSearchParams();
@@ -135,6 +173,8 @@ export default async function BoardPage({
     const string = query.toString();
     return string ? `/d/${slug}?${string}` : `/d/${slug}`;
   };
+
+  const layout = parseBoardLayout(dashboard.boardLayout);
 
   return (
     <>
@@ -177,58 +217,22 @@ export default async function BoardPage({
           </div>
         </div>
 
-        <KpiBoard kpis={kpis} editable={editable} dashboardSlug={slug} />
-
-        {/* Progress, then the two things worth acting on: what is stuck, and what did
-            not get finished last week. */}
-        <section className="mb-5 rounded-xl border border-subtle bg-surface px-4 py-3">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-[13px] font-semibold tabular">
-              {done} of {weekTasks.length} done
-              {blocked > 0 && (
-                <span className="ml-2 font-semibold" style={{ color: "var(--status-critical)" }}>
-                  · {blocked} blocked
-                </span>
-              )}
-            </p>
-
-            {editable && carryable > 0 && (
-              <form action={carryOverLastWeek.bind(null, slug)}>
-                <input type="hidden" name="week" value={week} />
-                <button type="submit" className={ghostButtonClass}>
-                  Carry over {carryable} unfinished from last week
-                </button>
-              </form>
-            )}
-          </div>
-
-          <div
-            className="mt-2.5 h-1.5 overflow-hidden rounded-full"
-            style={{ background: "var(--border-subtle)" }}
-            role="img"
-            aria-label={`${done} of ${weekTasks.length} tasks done`}
-          >
-            <div
-              className="h-full rounded-full transition-[width]"
-              style={{
-                width: `${weekTasks.length === 0 ? 0 : (done / weekTasks.length) * 100}%`,
-                background: "var(--status-good)",
-              }}
-            />
-          </div>
-        </section>
-
         {/* Filters are links, not a form: they belong in the URL alongside the week, so
             "Chris's week" is one address. */}
         {(clients.length > 0 || peopleOptions.length > 1) && (
-          <div className="scroll-x mb-4 flex items-center gap-1.5 pb-1">
-            <FilterLink href={href({ client: "", person: "" })} active={!clientFilter && !personFilter}>
+          <div className="scroll-x mb-5 flex items-center gap-1.5 pb-1">
+            <FilterLink
+              href={href({ client: "", person: "" })}
+              active={!clientFilter && !personFilter}
+            >
               Everything
             </FilterLink>
             {clients.map((client) => (
               <FilterLink
                 key={client.value}
-                href={href({ client: clientFilter === client.value ? "" : client.value })}
+                href={href({
+                  client: clientFilter === client.value ? "" : client.value,
+                })}
                 active={clientFilter === client.value}
               >
                 {client.label}
@@ -238,7 +242,9 @@ export default async function BoardPage({
               peopleOptions.map((person) => (
                 <FilterLink
                   key={person.value}
-                  href={href({ person: personFilter === person.value ? "" : person.value })}
+                  href={href({
+                    person: personFilter === person.value ? "" : person.value,
+                  })}
                   active={personFilter === person.value}
                 >
                   {person.label}
@@ -247,126 +253,145 @@ export default async function BoardPage({
           </div>
         )}
 
-        <div className="space-y-3">
-          {DAYS.map((label, day) => {
-            const rows = weekTasks.filter((task) => task.day === day);
-            const isToday = today === day;
+        <BoardShell
+          initialPanels={layout.panels}
+          dashboardSlug={slug}
+          editable={editable}
+          slots={{
+            progress: (
+              <>
+                <ProgressPanel done={done} total={weekTasks.length} />
+                {editable && carryable > 0 && (
+                  <form
+                    action={carryOverLastWeek.bind(null, slug)}
+                    className="mt-2"
+                  >
+                    <input type="hidden" name="week" value={week} />
+                    <button type="submit" className={ghostButtonClass}>
+                      Carry over {carryable} unfinished from last week
+                    </button>
+                  </form>
+                )}
+              </>
+            ),
 
-            return (
-              <section
-                key={label}
-                className={`overflow-hidden rounded-xl border bg-surface ${
-                  isToday ? "border-accent-edge" : "border-subtle"
-                }`}
-              >
-                <div className="flex items-center justify-between gap-2 px-3 py-2">
-                  <div className="flex items-center gap-2">
-                    <Chip color={dayTint(day)}>{label}</Chip>
-                    <span className="text-[12px] text-ink-muted tabular">
-                      {dateOfDay(monday, day).toLocaleDateString("en-GB", {
-                        day: "numeric",
-                        month: "short",
-                        timeZone: "UTC",
-                      })}
-                    </span>
-                    {isToday && (
-                      <span className="text-[12px] font-semibold text-accent">
-                        Today
-                      </span>
-                    )}
-                  </div>
-                  {rows.length > 0 && (
-                    <span className="text-[12px] text-ink-muted tabular">
-                      {rows.filter((t) => t.status === TASK_STATUS.DONE).length}/
-                      {rows.length}
-                    </span>
-                  )}
-                </div>
-
-                <ul className="border-t border-subtle">
-                  {rows.length === 0 && !editable && (
-                    <li className="px-3">
-                      <EmptyNote>Nothing scheduled.</EmptyNote>
-                    </li>
-                  )}
-                  {rows.map((task) => (
-                    <TaskRow
-                      key={task.id}
-                      task={task}
-                      clients={clients}
-                      people={peopleOptions}
-                      editable={editable}
-                      dashboardSlug={slug}
-                    />
-                  ))}
-                  {editable && (
-                    <li>
-                      <AddTaskForm
-                        day={day}
-                        week={week}
-                        clients={clients}
-                        people={peopleOptions}
-                        defaultClientId={clientFilter}
-                        defaultAssigneeId={personFilter}
-                        dashboardSlug={slug}
-                      />
-                    </li>
-                  )}
-                </ul>
-              </section>
-            );
-          })}
-        </div>
-
-        {/* The to-do list. Deliberately outside the week: these are the things with no
-            day yet, and they should not vanish when the week turns over. */}
-        <section className="mt-6 overflow-hidden rounded-xl border border-subtle bg-surface">
-          <div className="flex items-center justify-between gap-2 px-3 py-2">
-            <h2 className="text-[13px] font-bold tracking-tight">To-do</h2>
-            <span className="text-[12px] text-ink-muted">Not tied to a week</span>
-          </div>
-
-          <ul className="border-t border-subtle">
-            {todos.length === 0 && !editable && (
-              <li className="px-3">
-                <EmptyNote>Nothing on the list.</EmptyNote>
-              </li>
-            )}
-            {todos.map((task) => (
-              <TaskRow
-                key={task.id}
-                task={task}
-                clients={clients}
-                people={peopleOptions}
-                editable={editable}
+            revenue: (
+              <RevenuePanel
                 dashboardSlug={slug}
+                todayCents={todayCents}
+                goalCents={dashboard.revenueGoalCents}
+                monthDays={monthDays}
+                monthLabel={now.toLocaleDateString("en-GB", {
+                  month: "long",
+                  year: "numeric",
+                  timeZone: "UTC",
+                })}
+                payments={todayPayments.map((p) => ({
+                  id: p.id,
+                  amountCents: p.amountCents,
+                  note: p.note,
+                  clientName: p.client?.name ?? null,
+                  receivedAt: p.receivedAt.toISOString(),
+                }))}
+                clients={clientRows.map((c) => ({ id: c.id, name: c.name }))}
+                editable={editable}
               />
-            ))}
-            {editable && (
-              <li>
-                <AddTaskForm
+            ),
+
+            kpis: <KpiBoard kpis={kpis} editable={editable} dashboardSlug={slug} />,
+
+            todo: (
+              <div className="overflow-hidden rounded-xl border border-subtle bg-surface">
+                <div className="flex items-center justify-between gap-2 px-3 py-2">
+                  <span className="text-[12px] text-ink-muted">
+                    Not tied to a week
+                  </span>
+                  <span className="text-[12px] text-ink-muted tabular">
+                    {todos.length}
+                  </span>
+                </div>
+                <TaskList
+                  tasks={todos}
                   day={null}
                   week={week}
                   clients={clients}
                   people={peopleOptions}
+                  editable={editable}
+                  dashboardSlug={slug}
+                  emptyNote="Nothing on the list."
                   defaultClientId={clientFilter}
                   defaultAssigneeId={personFilter}
-                  dashboardSlug={slug}
                 />
-              </li>
-            )}
-          </ul>
-        </section>
+              </div>
+            ),
 
-        <p className="mt-6 flex items-center gap-1.5 text-[12px] text-ink-muted">
-          <span
-            aria-hidden
-            className="inline-block size-[7px] rounded-full"
-            style={{ background: taskStatusTint(TASK_STATUS.BLOCKED) }}
-          />
-          Set a task to “Blocked” when it is waiting on someone — blocked counts show
-          at the top of the week.
-        </p>
+            week: (
+              <div className="space-y-3">
+                {DAYS.map((label, day) => {
+                  const rows = weekTasks.filter((task) => task.day === day);
+                  const isToday = today === day;
+
+                  return (
+                    <div
+                      key={label}
+                      className={`overflow-hidden rounded-xl border bg-surface ${
+                        isToday ? "border-accent-edge" : "border-subtle"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2 px-3 py-2">
+                        <div className="flex items-center gap-2">
+                          <Chip color={dayTint(day)}>{label}</Chip>
+                          <span className="text-[12px] text-ink-muted tabular">
+                            {dateOfDay(monday, day).toLocaleDateString("en-GB", {
+                              day: "numeric",
+                              month: "short",
+                              timeZone: "UTC",
+                            })}
+                          </span>
+                          {isToday && (
+                            <span className="text-[12px] font-semibold text-accent">
+                              Today
+                            </span>
+                          )}
+                        </div>
+                        {rows.length > 0 && (
+                          <span className="text-[12px] text-ink-muted tabular">
+                            {
+                              rows.filter((t) => t.status === TASK_STATUS.DONE)
+                                .length
+                            }
+                            /{rows.length}
+                          </span>
+                        )}
+                      </div>
+
+                      <TaskList
+                        tasks={rows}
+                        day={day}
+                        week={week}
+                        clients={clients}
+                        people={peopleOptions}
+                        editable={editable}
+                        dashboardSlug={slug}
+                        emptyNote="Nothing scheduled."
+                        defaultClientId={clientFilter}
+                        defaultAssigneeId={personFilter}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            ),
+
+            calls: (
+              <CallsPanel
+                calls={calls}
+                dashboardSlug={slug}
+                editable={editable}
+              />
+            ),
+          }}
+        />
       </main>
     </>
   );

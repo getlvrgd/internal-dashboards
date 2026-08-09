@@ -77,7 +77,7 @@ export default async function PeoplePage() {
         </div>
       </header>
 
-      <h1 className="mt-8 text-[26px] font-bold tracking-tight">
+      <h1 className="mt-8 text-[26px] font-extrabold tracking-[-0.08em]">
         Everyone with a login
       </h1>
       <p className="mt-1 max-w-lg text-[14px] text-ink-secondary">

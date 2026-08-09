@@ -112,7 +112,7 @@ export default async function HubPage() {
 
       <div className="mt-8 flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-[26px] font-bold tracking-tight">
+          <h1 className="text-[26px] font-extrabold tracking-[-0.08em]">
             Your dashboards
           </h1>
           <p className="mt-1 max-w-lg text-[14px] text-ink-secondary">

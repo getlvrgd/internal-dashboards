@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Inter } from "next/font/google";
 
 import { FaviconSync } from "@/components/FaviconSync";
 import { THEME_SCRIPT } from "@/components/ThemeToggle";
@@ -39,16 +40,31 @@ export const metadata: Metadata = {
 };
 
 /**
- * No webfont is loaded. The type stack in globals.css asks the operating system for
- * San Francisco, which is how Apple licenses it — SF ships with macOS and iOS and may
- * not be redistributed as a webfont. On a Mac this renders in genuine SF; elsewhere it
- * falls back to that platform's own UI face.
+ * Headings are Inter; body text is still the OS face.
+ *
+ * SF cannot be shipped as a webfont — Apple licenses it for macOS and iOS only — so the
+ * running text asks the operating system for it and lands on the platform's own UI face
+ * elsewhere. Inter is open source, so it can be self-hosted, and it is loaded only for
+ * headings: one file, one weight, on the type that carries the brand.
+ *
+ * next/font downloads it at build time and serves it from this origin, so there is no
+ * request to Google at runtime and no flash of unstyled text.
  */
+const inter = Inter({
+  subsets: ["latin"],
+  weight: ["800"],
+  display: "swap",
+  variable: "--font-display",
+});
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className="h-full antialiased" suppressHydrationWarning>
+    <html
+      lang="en"
+      className={`h-full antialiased ${inter.variable}`}
+      suppressHydrationWarning
+    >
       <head>
         {/* Applies the saved theme before first paint, so a dark-mode user never
             sees a white flash. Must run ahead of React. */}

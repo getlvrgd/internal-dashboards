@@ -35,7 +35,7 @@ export default async function SettingsPage({
       <Nav session={session} dashboard={dashboard} context={context} />
 
       <main className="mx-auto w-full max-w-2xl flex-1 px-5 py-6">
-        <h1 className="mb-5 text-[22px] font-bold tracking-tight">Settings</h1>
+        <h1 className="mb-5 text-[22px] font-extrabold tracking-[-0.08em]">Settings</h1>
 
         <form
           action={updateDashboard.bind(null, slug)}
@@ -116,7 +116,7 @@ export default async function SettingsPage({
         </form>
 
         <section className="mt-6 rounded-xl border border-subtle bg-surface p-4">
-          <h2 className="text-[13px] font-bold tracking-tight">Template</h2>
+          <h2 className="text-[13px] font-extrabold tracking-[-0.08em]">Template</h2>
           <p className="mt-1 text-[12.5px] text-ink-secondary">
             {dashboard.isTemplate
               ? "New dashboards are cloned from this one — its SOP library and KPI row, never its clients or its week."
@@ -136,7 +136,7 @@ export default async function SettingsPage({
             not a trade worth making. */}
         {isOwner(session) && (
           <section className="mt-6 rounded-xl border border-subtle p-4">
-            <h2 className="text-[13px] font-bold tracking-tight text-critical">
+            <h2 className="text-[13px] font-extrabold tracking-[-0.08em] text-critical">
               Delete this dashboard
             </h2>
             <p className="mt-1 text-[12.5px] text-ink-secondary">

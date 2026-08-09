@@ -260,7 +260,7 @@ function PageView({
             </div>
           ) : (
             <>
-              <h3 className="text-[17px] font-bold tracking-tight">
+              <h3 className="text-[17px] font-extrabold tracking-[-0.08em]">
                 {page.title}
               </h3>
               {page.summary && (
@@ -644,7 +644,7 @@ function Tile({
       <span className="inline-block rounded border border-subtle px-1.5 py-0.5 text-[10px] font-bold tracking-widest text-ink-muted uppercase">
         {badge}
       </span>
-      <h4 className="mt-2 text-[13.5px] font-bold tracking-tight text-pretty">
+      <h4 className="mt-2 text-[13.5px] font-extrabold tracking-[-0.08em] text-pretty">
         {title}
       </h4>
       {children}

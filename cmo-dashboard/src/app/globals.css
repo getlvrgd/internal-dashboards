@@ -133,6 +133,30 @@
     "Segoe UI", "Helvetica Neue", Arial, sans-serif;
   --type-mono:
     ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  /*
+   * Headings only. --font-display is set by next/font in the root layout; the OS stack
+   * behind it is what renders if the file has not arrived yet, so a heading is never
+   * invisible while a font loads.
+   */
+  --type-display: var(--font-display), var(--type-sans);
+}
+
+/*
+ * The heading spec: Inter, Extra Bold, -8% tracking.
+ *
+ * -0.08em is very tight — that is the point at display sizes, where the letters need
+ * pulling together to read as one shape. It is deliberately applied to h1–h4 as a base
+ * rule AND on the elements themselves, because Tailwind utilities beat element
+ * selectors: without matching classes the utilities already on those headings would win
+ * and the spec would silently do nothing.
+ */
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--type-display);
+  font-weight: 800;
+  letter-spacing: -0.08em;
 }
 
 body {

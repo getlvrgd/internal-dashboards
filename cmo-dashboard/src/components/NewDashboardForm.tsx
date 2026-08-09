@@ -47,7 +47,7 @@ export function NewDashboardForm({
       className="w-full rounded-xl border border-subtle bg-surface p-4 sm:w-[26rem]"
     >
       <div className="flex items-center justify-between gap-2">
-        <h2 className="text-[13px] font-bold tracking-tight">New dashboard</h2>
+        <h2 className="text-[13px] font-extrabold tracking-[-0.08em]">New dashboard</h2>
         <button
           type="button"
           onClick={() => setOpen(false)}

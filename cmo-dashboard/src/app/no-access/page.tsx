@@ -17,7 +17,7 @@ export default async function NoAccessPage() {
   return (
     <div className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-5 py-16">
       <Logo height={22} />
-      <h1 className="mt-8 text-[22px] font-bold tracking-tight">
+      <h1 className="mt-8 text-[22px] font-extrabold tracking-[-0.08em]">
         Nothing here yet
       </h1>
       <p className="mt-2 text-[14px] text-ink-secondary">

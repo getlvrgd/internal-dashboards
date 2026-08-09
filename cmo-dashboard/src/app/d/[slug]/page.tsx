@@ -4,6 +4,8 @@ import { carryOverLastWeek } from "@/app/actions/tasks";
 import { BoardShell } from "@/components/BoardShell";
 import { CallsPanel } from "@/components/CallsPanel";
 import { KpiBoard } from "@/components/KpiBoard";
+import { BlockLibrary } from "@/components/BlockLibrary";
+import { LoginsDirectory } from "@/components/LoginsDirectory";
 import { Nav } from "@/components/Nav";
 import { DailyPanel } from "@/components/DailyPanel";
 import { DailyProgress } from "@/components/DailyProgress";
@@ -14,7 +16,9 @@ import { TaskStoreProvider } from "@/components/TaskStore";
 import { Chip, ghostButtonClass } from "@/components/ui";
 import { resolveDashboard } from "@/lib/access";
 import { saveBoardLayout } from "@/app/actions/board";
+import { saveClientAssets } from "@/app/actions/sops";
 import { DEFAULT_PANELS, parseBoardLayout } from "@/lib/board";
+import { parseSopContent } from "@/lib/sops";
 import { type BoardTask } from "@/lib/tasks";
 import { prisma } from "@/lib/db";
 import { daysInMonthUTC, startOfDayUTC, startOfMonthUTC } from "@/lib/money";
@@ -103,7 +107,13 @@ export default async function BoardPage({
     prisma.client.findMany({
       where: { dashboardId: dashboard.id, status: { not: "CHURNED" } },
       orderBy: [{ position: "asc" }, { name: "asc" }],
-      select: { id: true, name: true, color: true },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        color: true,
+        assetsContent: true,
+      },
     }),
     // Who a task can be assigned to: this dashboard's members, plus the owner and
     // admins, who reach every dashboard without a membership row.
@@ -139,6 +149,28 @@ export default async function BoardPage({
       include: { client: { select: { name: true } } },
     }),
   ]);
+
+  // The two directories follow the chips: one offer's at a time, never all of them.
+  // With nothing selected they say so rather than piling every offer into one panel.
+  const selectedOffer = clientFilter
+    ? (clientRows.find((c) => c.id === clientFilter) ?? null)
+    : null;
+
+  const offerLogins =
+    selectedOffer && context.canUseOfferLogins
+      ? await prisma.credential.findMany({
+          where: { clientId: selectedOffer.id },
+          orderBy: [{ position: "asc" }, { createdAt: "asc" }],
+        })
+      : [];
+
+  const presets =
+    selectedOffer && context.canManage
+      ? await prisma.loginPreset.findMany({
+          orderBy: { service: "asc" },
+          select: { service: true, url: true },
+        })
+      : [];
 
   const clients: RowOption[] = clientRows.map((c) => ({
     value: c.id,
@@ -202,7 +234,7 @@ export default async function BoardPage({
       <main className="mx-auto w-full max-w-6xl flex-1 px-5 py-6">
         <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h1 className="text-[22px] font-bold tracking-tight">
+            <h1 className="text-[22px] font-extrabold tracking-[-0.08em]">
               {isCurrentWeek ? "This week" : "Week of"}
             </h1>
             <p className="mt-0.5 text-[13px] text-ink-secondary tabular">
@@ -275,7 +307,7 @@ export default async function BoardPage({
           editable={context.canManage}
           slots={{
             progress: (
-              <>
+              <div>
                 <DailyProgress today={today} />
                 {editable && carryable > 0 && (
                   <form
@@ -288,7 +320,7 @@ export default async function BoardPage({
                     </button>
                   </form>
                 )}
-              </>
+              </div>
             ),
 
             revenue: (
@@ -378,6 +410,44 @@ export default async function BoardPage({
                 editable={editable}
               />
             ),
+
+            assets: selectedOffer ? (
+              <BlockLibrary
+                content={parseSopContent(selectedOffer.assetsContent)}
+                save={saveClientAssets.bind(null, slug, selectedOffer.slug)}
+                canEdit={context.canManage}
+                canDelete={context.canManage}
+                emptyNote={`No assets filed for ${selectedOffer.name} yet.`}
+              />
+            ) : (
+              <p className="text-[13px] text-ink-muted">
+                Pick an offer above to see its assets.
+              </p>
+            ),
+
+            logins:
+              selectedOffer && context.canUseOfferLogins ? (
+                <LoginsDirectory
+                  logins={offerLogins.map((c) => ({
+                    id: c.id,
+                    service: c.service,
+                    url: c.url,
+                    identity: c.identity,
+                    notes: c.notes,
+                    hasSecret: c.secretCipher !== null,
+                  }))}
+                  clientId={selectedOffer.id}
+                  clientName={selectedOffer.name}
+                  dashboardSlug={slug}
+                  editable={context.canManage}
+                  presets={presets}
+                  offers={clientRows.map((c) => ({ id: c.id, name: c.name }))}
+                />
+              ) : (
+                <p className="text-[13px] text-ink-muted">
+                  Pick an offer above to see its logins.
+                </p>
+              ),
 
           }}
         />

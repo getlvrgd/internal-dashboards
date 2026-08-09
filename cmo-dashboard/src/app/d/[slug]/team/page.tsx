@@ -77,7 +77,7 @@ export default async function TeamPage({
       <main className="mx-auto w-full max-w-4xl flex-1 px-5 py-6">
         <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h1 className="text-[22px] font-bold tracking-tight">Team</h1>
+            <h1 className="text-[22px] font-extrabold tracking-[-0.08em]">Team</h1>
             <p className="mt-0.5 text-[13px] text-ink-secondary">
               Who can open {dashboard.name}.
             </p>
@@ -93,7 +93,7 @@ export default async function TeamPage({
         </div>
 
         <section className="mb-6">
-          <h2 className="mb-2 text-[13px] font-bold tracking-tight">
+          <h2 className="mb-2 text-[13px] font-extrabold tracking-[-0.08em]">
             On this dashboard
           </h2>
 
@@ -146,7 +146,7 @@ export default async function TeamPage({
 
         {others.length > 0 && (
           <section className="mb-6">
-            <h2 className="mb-2 text-[13px] font-bold tracking-tight">
+            <h2 className="mb-2 text-[13px] font-extrabold tracking-[-0.08em]">
               Add someone
             </h2>
             <ul className="overflow-hidden rounded-xl border border-subtle bg-surface">
@@ -183,7 +183,7 @@ export default async function TeamPage({
         )}
 
         <section>
-          <h2 className="mb-2 text-[13px] font-bold tracking-tight">
+          <h2 className="mb-2 text-[13px] font-extrabold tracking-[-0.08em]">
             Always has access
           </h2>
           <ul className="overflow-hidden rounded-xl border border-subtle bg-surface">

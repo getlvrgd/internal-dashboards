@@ -147,7 +147,7 @@ export default async function ClientPage({
                     : "var(--border-subtle)",
                 }}
               />
-              <h1 className="text-[24px] font-bold tracking-tight">
+              <h1 className="text-[24px] font-extrabold tracking-[-0.08em]">
                 {client.name}
               </h1>
               <Chip color={tinted ? client.color : "blue"}>

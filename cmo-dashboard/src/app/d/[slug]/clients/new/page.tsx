@@ -30,7 +30,7 @@ export default async function NewClientPage({
           ‹ Clients
         </Link>
 
-        <h1 className="mb-5 mt-2 text-[22px] font-bold tracking-tight">
+        <h1 className="mb-5 mt-2 text-[22px] font-extrabold tracking-[-0.08em]">
           Add a client
         </h1>
 

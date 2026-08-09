@@ -38,7 +38,7 @@ export default async function SopsPage({
 
       <main className="mx-auto w-full max-w-4xl flex-1 px-5 py-6">
         <div className="mb-5">
-          <h1 className="text-[22px] font-bold tracking-tight">SOPs</h1>
+          <h1 className="text-[22px] font-extrabold tracking-[-0.08em]">SOPs</h1>
           <p className="mt-0.5 text-[13px] text-ink-secondary tabular">
             {blocks} {blocks === 1 ? "entry" : "entries"} across{" "}
             {content.pages.length}{" "}

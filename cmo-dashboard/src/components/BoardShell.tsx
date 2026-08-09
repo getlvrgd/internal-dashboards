@@ -209,7 +209,7 @@ export function BoardShell({
                   </>
                 ) : (
                   panel.title.trim() !== "" && (
-                    <h2 className="text-[15px] font-bold tracking-tight">
+                    <h2 className="text-[15px] font-extrabold tracking-[-0.08em]">
                       {panel.title}
                     </h2>
                   )

@@ -53,7 +53,7 @@ export function SectionHeading({
 }) {
   return (
     <div className="mb-3 flex items-end justify-between gap-4">
-      <h2 className="text-[15px] font-bold tracking-tight">
+      <h2 className="text-[15px] font-extrabold tracking-[-0.08em]">
         {title}
         {count && (
           <span className="ml-2 text-[13px] font-semibold text-ink-muted tabular">

@@ -167,7 +167,7 @@ function LoginCard({
       <span className="inline-block rounded border border-subtle px-1.5 py-0.5 text-[10px] font-bold tracking-widest text-ink-muted uppercase">
         Login
       </span>
-      <h3 className="mt-2 text-[13.5px] font-bold tracking-tight">
+      <h3 className="mt-2 text-[13.5px] font-extrabold tracking-[-0.08em]">
         {login.service}
       </h3>
       {login.notes && (

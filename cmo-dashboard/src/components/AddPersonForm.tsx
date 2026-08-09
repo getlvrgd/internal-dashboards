@@ -41,7 +41,7 @@ export function AddPersonForm({
       action={action}
       className="rounded-xl border border-subtle bg-surface p-4"
     >
-      <h2 className="text-[13px] font-bold tracking-tight">Add someone</h2>
+      <h2 className="text-[13px] font-extrabold tracking-[-0.08em]">Add someone</h2>
 
       <div className="mt-3 grid gap-2 sm:grid-cols-2">
         <input

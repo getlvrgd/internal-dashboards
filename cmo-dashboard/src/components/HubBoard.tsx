@@ -106,7 +106,7 @@ function ReadCard({ dashboard }: { dashboard: HubCard }) {
       <ColorBar color={dashboard.color} />
 
       <div className="flex items-start gap-2">
-        <h2 className="min-w-0 flex-1 text-[16px] font-bold tracking-tight text-pretty">
+        <h2 className="min-w-0 flex-1 text-[16px] font-extrabold tracking-[-0.08em] text-pretty">
           {dashboard.name}
         </h2>
         <span className="flex shrink-0 flex-col items-end gap-1">

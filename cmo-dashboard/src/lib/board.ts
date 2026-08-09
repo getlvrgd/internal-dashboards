@@ -54,6 +54,8 @@ export const DEFAULT_PANELS: Panel[] = [
   { kind: "todo", title: "Today", hidden: false },
   { kind: "week", title: "Weekly actionable tasks", hidden: false },
   { kind: "calls", title: "Calls", hidden: false },
+  { kind: "assets", title: "Offer assets directory", hidden: false },
+  { kind: "logins", title: "Offer logins directory", hidden: false },
 ];
 
 /**
@@ -64,10 +66,11 @@ export const DEFAULT_PANELS: Panel[] = [
  * are dashboard-level and deliberately absent — a client page answering "how is the
  * whole business doing" is the thing that made it a page nobody opened.
  *
- * The assets and logins directories live HERE and nowhere else. They were briefly on the
- * dashboard board too, grouped by offer, and it made both panels a pile of everything:
- * the point of an offer's accounts is that they are that offer's, and a board-wide list
- * is the shape that was deliberately removed when the company-wide vault went.
+ * The assets and logins directories appear on the dashboard board too, but only once an
+ * offer is picked from the chips at the top — one offer's at a time, never all of them
+ * at once. A board-wide list of every account is the shape that was deliberately removed
+ * when the company-wide vault went; scoping to the selection keeps the convenience
+ * without bringing that back.
  */
 export const DEFAULT_CLIENT_PANELS: Panel[] = [
   { kind: "progress", title: "Progress", hidden: false },

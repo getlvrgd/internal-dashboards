@@ -3,7 +3,6 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
-import { saveSopContent } from "@/app/actions/sops";
 import { safeHref } from "@/lib/links";
 import {
   BADGES,
@@ -18,7 +17,11 @@ import {
 import { EmptyNote, ghostButtonClass, inputClass, primaryButtonClass } from "./ui";
 
 /**
- * The SOP library: reader and editor in one component.
+ * A block library: reader and editor in one component.
+ *
+ * Used for both the dashboard's SOP library and a client's asset directory — the same
+ * document shape, so the same editor. What differs is only where it is saved, which is
+ * why `save` is a prop rather than an import.
  *
  * One component rather than two because they are the same tree with different leaves,
  * and keeping a separate read-only renderer in step with the editor is how the two
@@ -29,14 +32,17 @@ import { EmptyNote, ghostButtonClass, inputClass, primaryButtonClass } from "./u
  * per keystroke would be a great deal of machinery for something one person touches a
  * few times a month.
  */
-export function SopLibrary({
+export function BlockLibrary({
   content: initial,
-  dashboardSlug,
+  save: saveContent,
   canEdit,
+  emptyNote = "Nothing here yet.",
 }: {
   content: SopContent;
-  dashboardSlug: string;
+  /** A bound server action. Takes the whole document as JSON. */
+  save: (json: string) => Promise<{ ok?: true; error?: string }>;
   canEdit: boolean;
+  emptyNote?: string;
 }) {
   const [content, setContent] = useState<SopContent>(initial);
   const [editing, setEditing] = useState(false);
@@ -56,7 +62,7 @@ export function SopLibrary({
   const save = () => {
     setError(null);
     startTransition(async () => {
-      const result = await saveSopContent(dashboardSlug, JSON.stringify(content));
+      const result = await saveContent(JSON.stringify(content));
       if (result?.error) {
         setError(result.error);
         return;
@@ -109,7 +115,7 @@ export function SopLibrary({
             </>
           ) : (
             <button onClick={() => setEditing(true)} className={ghostButtonClass}>
-              Edit library
+              Edit
             </button>
           )}
         </div>
@@ -146,8 +152,8 @@ export function SopLibrary({
 
       {content.sections.length === 0 ? (
         <EmptyNote>
-          Nothing in the library yet.
-          {canEdit && " Use “Edit library” to add the first area."}
+          {emptyNote}
+          {canEdit && " Use “Edit” to add the first area."}
         </EmptyNote>
       ) : (
         <div className="space-y-8">

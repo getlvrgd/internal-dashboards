@@ -27,8 +27,18 @@ export async function createCall(dashboardSlug: string, formData: FormData) {
   const data = read(formData);
   if (!data.title) return;
 
+  // Verified rather than trusted: the id comes from the form, so on its own it would
+  // let a call be filed against a client in a dashboard the caller cannot open.
+  const clientIdRaw = String(formData.get("clientId") ?? "");
+  const client = clientIdRaw
+    ? await prisma.client.findFirst({
+        where: { id: clientIdRaw, dashboardId: dashboard.id },
+        select: { id: true, slug: true },
+      })
+    : null;
+
   const last = await prisma.call.findFirst({
-    where: { dashboardId: dashboard.id },
+    where: { dashboardId: dashboard.id, clientId: client?.id ?? null },
     orderBy: { position: "desc" },
     select: { position: true },
   });
@@ -37,11 +47,12 @@ export async function createCall(dashboardSlug: string, formData: FormData) {
     data: {
       ...data,
       dashboardId: dashboard.id,
+      clientId: client?.id ?? null,
       position: (last?.position ?? -1) + 1,
     },
   });
 
-  revalidatePath(`/d/${dashboardSlug}`);
+  revalidatePath(`/d/${dashboardSlug}`, "layout");
 }
 
 export async function updateCall(dashboardSlug: string, formData: FormData) {
@@ -57,7 +68,7 @@ export async function updateCall(dashboardSlug: string, formData: FormData) {
   if (!data.title) return;
 
   await prisma.call.update({ where: { id: existing.id }, data });
-  revalidatePath(`/d/${dashboardSlug}`);
+  revalidatePath(`/d/${dashboardSlug}`, "layout");
 }
 
 export async function deleteCall(dashboardSlug: string, formData: FormData) {
@@ -70,7 +81,7 @@ export async function deleteCall(dashboardSlug: string, formData: FormData) {
   if (!existing) return;
 
   await prisma.call.delete({ where: { id: existing.id } });
-  revalidatePath(`/d/${dashboardSlug}`);
+  revalidatePath(`/d/${dashboardSlug}`, "layout");
 }
 
 /** Manual ordering, same rewrite-every-position approach the hub uses. */

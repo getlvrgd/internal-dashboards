@@ -156,6 +156,11 @@ model Call {
   dashboardId String
   dashboard   Dashboard @relation(fields: [dashboardId], references: [id], onDelete: Cascade)
 
+  /// Set when the call belongs to one offer rather than the whole dashboard. The
+  /// dashboard board shows the ones with no client; a client's board shows its own.
+  clientId String?
+  client   Client? @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
   title String
   /// The join link. One click from the board into the call is the whole point.
   url   String?
@@ -168,6 +173,7 @@ model Call {
   updatedAt DateTime @updatedAt
 
   @@index([dashboardId])
+  @@index([clientId])
 }
 
 /// Who can open which dashboard, and what they may do inside it.
@@ -225,9 +231,23 @@ model Client {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  /// The offer's asset directory, as a block document.
+  ///
+  /// Same shape as the dashboard's SOP library and the sales rep hub's content: sections
+  /// hold pages, pages hold blocks, and a block is a link, a video, a written note, a
+  /// call or a checklist. Assets are per offer — the deck, the VSL, the ad account — so
+  /// they live on the client rather than on the dashboard, while SOPs stay general.
+  ///
+  /// Shape and defaults live in src/lib/sops.ts.
+  assetsContent Json?
+
+  /// Panel order and headings for this client's board. See src/lib/board.ts.
+  boardLayout Json?
+
   tasks       Task[]
   credentials Credential[]
   payments    Payment[]
+  calls       Call[]
 
   @@unique([dashboardId, slug])
   @@index([dashboardId, status])

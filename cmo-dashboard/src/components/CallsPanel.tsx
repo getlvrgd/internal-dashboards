@@ -28,10 +28,13 @@ export type CallRow = {
 export function CallsPanel({
   calls,
   dashboardSlug,
+  clientId,
   editable,
 }: {
   calls: CallRow[];
   dashboardSlug: string;
+  /** Set on a client board, so a call created here belongs to that offer. */
+  clientId?: string;
   editable: boolean;
 }) {
   return (
@@ -167,6 +170,9 @@ export function CallsPanel({
             action={createCall.bind(null, dashboardSlug)}
             className="grid gap-2 px-3 pb-3 sm:grid-cols-2"
           >
+            {clientId && (
+              <input type="hidden" name="clientId" value={clientId} />
+            )}
             <input
               name="title"
               required

@@ -22,6 +22,8 @@ export const PANEL_KINDS = [
   "todo",
   "week",
   "calls",
+  "assets",
+  "logins",
 ] as const;
 
 export type PanelKind = (typeof PANEL_KINDS)[number];
@@ -54,6 +56,26 @@ export const DEFAULT_PANELS: Panel[] = [
   { kind: "calls", title: "Calls", hidden: false },
 ];
 
+/**
+ * A client's board.
+ *
+ * The order the owner asked for: what is happening, then what to do, then the calls, and
+ * the two reference directories underneath. Revenue, the KPI row and the seven-day week
+ * are dashboard-level and deliberately absent — a client page answering "how is the
+ * whole business doing" is the thing that made it a page nobody opened.
+ */
+export const DEFAULT_CLIENT_PANELS: Panel[] = [
+  { kind: "progress", title: "Progress", hidden: false },
+  { kind: "todo", title: "To-do", hidden: false },
+  { kind: "calls", title: "Calls", hidden: false },
+  { kind: "assets", title: "Offer assets directory", hidden: false },
+  { kind: "logins", title: "Offer logins directory", hidden: false },
+];
+
+export const defaultClientLayout = (): BoardLayout => ({
+  panels: DEFAULT_CLIENT_PANELS.map((p) => ({ ...p })),
+});
+
 export const defaultLayout = (): BoardLayout => ({
   panels: DEFAULT_PANELS.map((p) => ({ ...p })),
 });
@@ -70,7 +92,10 @@ export const defaultLayout = (): BoardLayout => ({
  *     ADDING a panel shows up on boards saved before it existed. Without this, every
  *     new panel would be invisible to everyone who had ever reordered anything.
  */
-export function parseBoardLayout(raw: unknown): BoardLayout {
+export function parseBoardLayout(
+  raw: unknown,
+  fallback: Panel[] = DEFAULT_PANELS,
+): BoardLayout {
   const stored = (raw as { panels?: unknown } | null)?.panels;
   const panels: Panel[] = [];
   const seen = new Set<PanelKind>();
@@ -81,6 +106,9 @@ export function parseBoardLayout(raw: unknown): BoardLayout {
       const o = entry as Record<string, unknown>;
       if (!isPanelKind(o.kind) || seen.has(o.kind)) continue;
       seen.add(o.kind);
+      // Only panels this surface actually offers. A client board has no revenue panel,
+      // so a stored layout mentioning one must not put an empty slot on the page.
+      if (!fallback.some((f) => f.kind === o.kind)) continue;
       panels.push({
         kind: o.kind,
         title:
@@ -92,15 +120,16 @@ export function parseBoardLayout(raw: unknown): BoardLayout {
     }
   }
 
-  for (const fallback of DEFAULT_PANELS) {
-    if (!seen.has(fallback.kind)) panels.push({ ...fallback });
+  for (const missing of fallback) {
+    if (!seen.has(missing.kind)) panels.push({ ...missing });
   }
 
   return { panels };
 }
 
 export const defaultTitle = (kind: PanelKind) =>
-  DEFAULT_PANELS.find((p) => p.kind === kind)?.title ?? kind;
+  [...DEFAULT_PANELS, ...DEFAULT_CLIENT_PANELS].find((p) => p.kind === kind)
+    ?.title ?? kind;
 
 /* -------------------------------------------------------------------- copy -- */
 

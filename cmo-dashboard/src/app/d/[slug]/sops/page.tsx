@@ -1,5 +1,6 @@
 import { Nav } from "@/components/Nav";
-import { SopLibrary } from "@/components/SopLibrary";
+import { saveSopContent } from "@/app/actions/sops";
+import { BlockLibrary } from "@/components/BlockLibrary";
 import { resolveDashboard } from "@/lib/access";
 import { allBlocks, countLinks, parseSopContent } from "@/lib/sops";
 
@@ -46,10 +47,11 @@ export default async function SopsPage({
           </p>
         </div>
 
-        <SopLibrary
+        <BlockLibrary
           content={content}
-          dashboardSlug={slug}
+          save={saveSopContent.bind(null, slug)}
           canEdit={context.canManage}
+          emptyNote="Nothing in the library yet."
         />
       </main>
     </>

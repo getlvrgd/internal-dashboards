@@ -13,7 +13,8 @@ import type { RowOption } from "@/components/TaskRow";
 import { TaskStoreProvider } from "@/components/TaskStore";
 import { Chip, ghostButtonClass } from "@/components/ui";
 import { resolveDashboard } from "@/lib/access";
-import { parseBoardLayout } from "@/lib/board";
+import { saveBoardLayout } from "@/app/actions/board";
+import { DEFAULT_PANELS, parseBoardLayout } from "@/lib/board";
 import { type BoardTask } from "@/lib/tasks";
 import { prisma } from "@/lib/db";
 import { daysInMonthUTC, startOfDayUTC, startOfMonthUTC } from "@/lib/money";
@@ -126,7 +127,8 @@ export default async function BoardPage({
       select: { recurring: true, status: true },
     }),
     prisma.call.findMany({
-      where: { dashboardId: dashboard.id },
+      // Only the dashboard's own calls; an offer's calls live on that offer's board.
+      where: { dashboardId: dashboard.id, clientId: null },
       orderBy: [{ position: "asc" }, { createdAt: "asc" }],
     }),
     // The whole month in one query; today's rows are filtered out of it below rather
@@ -278,8 +280,9 @@ export default async function BoardPage({
         >
         <BoardShell
           initialPanels={layout.panels}
-          dashboardSlug={slug}
-          editable={editable}
+          defaultPanels={DEFAULT_PANELS}
+          onSave={saveBoardLayout.bind(null, slug)}
+          editable={context.canManage}
           slots={{
             progress: (
               <>

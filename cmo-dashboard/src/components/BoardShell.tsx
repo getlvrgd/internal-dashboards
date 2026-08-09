@@ -3,13 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition, type ReactNode } from "react";
 
-import { saveBoardLayout } from "@/app/actions/board";
-import {
-  defaultLayout,
-  defaultTitle,
-  type Panel,
-  type PanelKind,
-} from "@/lib/board";
+import { defaultTitle, type Panel, type PanelKind } from "@/lib/board";
 
 import { ghostButtonClass, inputClass, primaryButtonClass } from "./ui";
 
@@ -28,13 +22,22 @@ import { ghostButtonClass, inputClass, primaryButtonClass } from "./ui";
  */
 export function BoardShell({
   initialPanels,
+  defaultPanels,
   slots,
-  dashboardSlug,
+  onSave,
   editable,
 }: {
   initialPanels: Panel[];
+  /** What "Reset to default" restores — differs per surface. */
+  defaultPanels: Panel[];
   slots: Partial<Record<PanelKind, ReactNode>>;
-  dashboardSlug: string;
+  /** A bound server action taking the whole layout as JSON. */
+  onSave: (json: string) => Promise<{ ok?: true; error?: string }>;
+  /**
+   * Whether this person may rearrange the board at all. Deliberately stricter than
+   * being able to edit its contents: a member ticks tasks and fills in assets, but the
+   * shape of the page is the owner's decision and should look the same to everyone.
+   */
   editable: boolean;
 }) {
   const [panels, setPanels] = useState<Panel[]>(initialPanels);
@@ -52,7 +55,7 @@ export function BoardShell({
 
   const save = () => {
     startTransition(async () => {
-      await saveBoardLayout(dashboardSlug, JSON.stringify({ panels }));
+      await onSave(JSON.stringify({ panels }));
       setDirty(false);
       setEditing(false);
       router.refresh();
@@ -60,7 +63,7 @@ export function BoardShell({
   };
 
   const reset = () => {
-    update(defaultLayout().panels);
+    update(defaultPanels.map((p) => ({ ...p })));
   };
 
   const move = (from: number, to: number) => {

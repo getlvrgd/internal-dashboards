@@ -358,3 +358,22 @@ model Kpi {
 
   @@index([dashboardId])
 }
+
+/// A remembered tool, offered when adding a login anywhere.
+///
+/// Deliberately global rather than per dashboard: Gmail is Gmail whichever board you are
+/// on, and a preset list that had to be rebuilt for each one would be rebuilt for none.
+///
+/// Presets are learned rather than curated — saving a login upserts one by service name,
+/// so the list fills itself from what people actually use instead of needing a seed
+/// nobody maintains. Never holds a password or an account: only the tool and its URL.
+model LoginPreset {
+  id String @id @default(cuid())
+
+  /// Matched case-insensitively on write, so "Gmail" and "gmail" stay one row.
+  service String @unique
+  url     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

@@ -389,7 +389,15 @@ function PageView({
         <EmptyNote>Nothing here yet.</EmptyNote>
       )}
 
-      <div className="space-y-2.5">
+      {/* Tiles when reading, a list when editing. A grid is the fastest thing to scan
+          for "where is the deck"; a list is the only sane thing to reorder in. */}
+      <div
+        className={
+          editing
+            ? "space-y-2.5"
+            : "grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3"
+        }
+      >
         {page.blocks.map((block, blockIndex) => (
           <BlockView
             key={block.id}
@@ -602,24 +610,22 @@ function BlockView({
 
   if (block.type === "text") {
     return (
-      <div className="rounded-lg border border-subtle px-3 py-2.5">
-        <h4 className="text-[13px] font-bold">{block.title}</h4>
+      <Tile badge="TEXT" title={block.title}>
         {block.body && (
-          <p className="mt-1 whitespace-pre-wrap text-[13px] text-ink-secondary">
+          <p className="mt-1.5 line-clamp-6 whitespace-pre-wrap text-[12.5px] text-ink-secondary">
             {block.body}
           </p>
         )}
-      </div>
+      </Tile>
     );
   }
 
   if (block.type === "tasks") {
     return (
-      <div className="rounded-lg border border-subtle px-3 py-2.5">
-        <h4 className="text-[13px] font-bold">{block.title}</h4>
+      <Tile badge="CHECKLIST" title={block.title}>
         <ul className="mt-1.5 space-y-1">
           {(block.tasks ?? []).map((step, i) => (
-            <li key={i} className="flex items-start gap-2 text-[13px]">
+            <li key={i} className="flex items-start gap-2 text-[12.5px]">
               {/* Ticking is local to whoever is reading: one person working through a
                   list must not change what anyone else sees. */}
               <input type="checkbox" className="mt-0.5 shrink-0" />
@@ -627,48 +633,40 @@ function BlockView({
             </li>
           ))}
         </ul>
-      </div>
+      </Tile>
     );
   }
 
   if (block.type === "call") {
     const joinHref = block.url ? safeHref(block.url) : null;
     return (
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg border border-subtle px-3 py-2.5">
-        <span className="min-w-0 flex-1">
-          <span className="block text-[13px] font-semibold">{block.title}</span>
-          {block.time && (
-            <span className="block text-[12px] text-ink-muted">{block.time}</span>
-          )}
-          {block.description && (
-            <span className="block text-[12px] text-ink-muted">
-              {block.description}
-            </span>
-          )}
-        </span>
+      <Tile badge="CALL" title={block.title}>
+        {block.time && (
+          <p className="mt-0.5 text-[12px] text-ink-muted">{block.time}</p>
+        )}
+        {block.description && (
+          <p className="mt-0.5 text-[12px] text-ink-muted">{block.description}</p>
+        )}
         {joinHref ? (
           <a
             href={joinHref}
             target="_blank"
             rel="noreferrer noopener"
-            className="shrink-0 rounded-full bg-ink px-3 py-1.5 text-[12px] font-bold text-page"
+            className="mt-2 inline-block rounded-full bg-ink px-3 py-1.5 text-[12px] font-bold text-page"
           >
             Join
           </a>
         ) : (
-          <span className="shrink-0 text-[12px] text-ink-muted">
-            No link set
-          </span>
+          <p className="mt-2 text-[12px] text-ink-muted">No link set</p>
         )}
-      </div>
+      </Tile>
     );
   }
 
   if (block.type === "video") {
     const src = embedUrl(block.embed ?? "");
     return (
-      <div className="rounded-lg border border-subtle px-3 py-2.5">
-        <h4 className="text-[13px] font-bold">{block.title}</h4>
+      <Tile badge="VIDEO" title={block.title}>
         {src ? (
           <div className="mt-2 aspect-video overflow-hidden rounded-lg border border-subtle">
             <iframe
@@ -682,42 +680,71 @@ function BlockView({
           <p className="mt-1 text-[12px] text-ink-muted">Video not set.</p>
         )}
         {block.body && (
-          <p className="mt-2 whitespace-pre-wrap text-[13px] text-ink-secondary">
+          <p className="mt-2 line-clamp-4 whitespace-pre-wrap text-[12.5px] text-ink-secondary">
             {block.body}
           </p>
         )}
-      </div>
+      </Tile>
     );
   }
 
   const href = block.url ? safeHref(block.url) : null;
   return (
-    <div className="flex items-start gap-2.5 rounded-lg border border-subtle px-3 py-2.5">
-      <span className="mt-0.5 shrink-0 rounded border border-subtle px-1.5 py-0.5 text-[10px] font-bold tracking-widest text-ink-muted uppercase">
-        {block.badge ?? "LINK"}
+    <Tile badge={block.badge ?? "LINK"} title={block.title} href={href}>
+      {block.description && (
+        <p className="mt-1 text-[12.5px] text-ink-muted">{block.description}</p>
+      )}
+      {!href && (
+        <p className="mt-1 text-[12px] text-ink-muted italic">Link not set</p>
+      )}
+    </Tile>
+  );
+}
+
+/**
+ * One tile.
+ *
+ * The whole tile is the target when there is somewhere to go — a card you can only
+ * activate by hitting its title is a card that feels broken on a phone. Rendered as an
+ * anchor in that case so it keeps middle-click, "open in new tab" and focus for free.
+ */
+function Tile({
+  badge,
+  title,
+  href,
+  children,
+}: {
+  badge: string;
+  title: string;
+  href?: string | null;
+  children?: React.ReactNode;
+}) {
+  const body = (
+    <>
+      <span className="inline-block rounded border border-subtle px-1.5 py-0.5 text-[10px] font-bold tracking-widest text-ink-muted uppercase">
+        {badge}
       </span>
-      <span className="min-w-0 flex-1">
-        {href ? (
-          <a
-            href={href}
-            target="_blank"
-            rel="noreferrer noopener"
-            className="text-[13px] font-semibold underline-offset-2 hover:underline"
-          >
-            {block.title}
-          </a>
-        ) : (
-          <span className="text-[13px] font-semibold text-ink-muted">
-            {block.title} — link not set
-          </span>
-        )}
-        {block.description && (
-          <span className="mt-0.5 block text-[12.5px] text-ink-muted">
-            {block.description}
-          </span>
-        )}
-      </span>
-    </div>
+      <h4 className="mt-2 text-[13.5px] font-bold tracking-tight text-pretty">
+        {title}
+      </h4>
+      {children}
+    </>
+  );
+
+  const shell =
+    "block h-full rounded-xl border border-subtle bg-surface px-3.5 py-3 transition-colors";
+
+  return href ? (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer noopener"
+      className={`${shell} hover:border-strong`}
+    >
+      {body}
+    </a>
+  ) : (
+    <div className={shell}>{body}</div>
   );
 }
 

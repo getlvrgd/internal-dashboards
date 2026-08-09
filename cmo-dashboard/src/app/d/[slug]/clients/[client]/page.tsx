@@ -90,6 +90,13 @@ export default async function ClientPage({
     }),
   ]);
 
+  const presets = context.canSeeCredentials
+    ? await prisma.loginPreset.findMany({
+        orderBy: { service: "asc" },
+        select: { service: true, url: true },
+      })
+    : [];
+
   const clientOptions: RowOption[] = [
     { value: client.id, label: client.name, color: client.color },
   ];
@@ -261,6 +268,7 @@ export default async function ClientPage({
                   clientName={client.name}
                   dashboardSlug={slug}
                   editable={editable}
+                  presets={presets}
                 />
               ) : (
                 <p className="text-[13px] text-ink-muted">

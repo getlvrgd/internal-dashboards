@@ -59,8 +59,41 @@ async function ownedClient(clientId: string, dashboardId: string) {
   });
 }
 
-const revalidateClient = (dashboardSlug: string, clientSlug: string) =>
+const revalidateClient = (dashboardSlug: string, clientSlug: string) => {
   revalidatePath(`/d/${dashboardSlug}/clients/${clientSlug}`);
+  // The board carries the same directory, so it has to be refreshed too.
+  revalidatePath(`/d/${dashboardSlug}`);
+};
+
+/**
+ * Remembers a tool so it can be offered next time.
+ *
+ * Learned rather than curated: the preset list fills itself from what people actually
+ * save, which is the only version of this that stays current. Only the service and its
+ * URL are kept — never the account, never the password.
+ */
+async function rememberPreset(service: string, url: string | null) {
+  const name = service.trim();
+  if (!name) return;
+
+  const existing = await prisma.loginPreset.findFirst({
+    where: { service: { equals: name, mode: "insensitive" } },
+    select: { id: true, url: true },
+  });
+
+  if (existing) {
+    // Only fills a blank URL; it never overwrites one someone has corrected.
+    if (!existing.url && url) {
+      await prisma.loginPreset.update({
+        where: { id: existing.id },
+        data: { url },
+      });
+    }
+    return;
+  }
+
+  await prisma.loginPreset.create({ data: { service: name, url } });
+}
 
 export async function createCredential(
   dashboardSlug: string,
@@ -97,6 +130,7 @@ export async function createCredential(
     },
   });
 
+  await rememberPreset(parsed.data.service, parsed.data.url || null);
   revalidateClient(dashboardSlug, client.slug);
 }
 
@@ -131,6 +165,7 @@ export async function updateCredential(
     },
   });
 
+  await rememberPreset(parsed.data.service, parsed.data.url || null);
   revalidateClient(dashboardSlug, existing.client.slug);
 }
 

@@ -152,6 +152,15 @@ export default async function BoardPage({
     ? clientRows.filter((c) => c.id === clientFilter)
     : clientRows;
 
+  // Remembered tools, offered when adding a login. Global, so the list is whatever has
+  // ever been saved anywhere rather than a seed nobody maintains.
+  const presets = context.canSeeCredentials
+    ? await prisma.loginPreset.findMany({
+        orderBy: { service: "asc" },
+        select: { service: true, url: true },
+      })
+    : [];
+
   // Only fetched for someone who may open them, and only for the offers on screen.
   const loginRows = context.canSeeCredentials
     ? await prisma.credential.findMany({
@@ -442,6 +451,7 @@ export default async function BoardPage({
                 kind="logins"
                 dashboardSlug={slug}
                 editable={editable}
+                presets={presets}
               />
             ) : (
               <p className="text-[13px] text-ink-muted">

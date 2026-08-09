@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 
 import {
   clearSecret,
@@ -40,19 +40,22 @@ export function LoginsDirectory({
   clientName,
   dashboardSlug,
   editable,
+  presets = [],
 }: {
   logins: LoginRow[];
   clientId: string;
   clientName: string;
   dashboardSlug: string;
   editable: boolean;
+  /** Tools remembered from what has been saved before, anywhere. */
+  presets?: { service: string; url: string | null }[];
 }) {
   return (
     <div>
       {logins.length === 0 ? (
         <EmptyNote>No logins saved for {clientName}.</EmptyNote>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
           {logins.map((login) => (
             <LoginCard
               key={login.id}
@@ -76,13 +79,7 @@ export function LoginsDirectory({
             className="mt-3 grid gap-2 rounded-xl border border-subtle bg-surface p-3 sm:grid-cols-2"
           >
             <input type="hidden" name="clientId" value={clientId} />
-            <input
-              name="service"
-              required
-              placeholder="Tool — Google account, Close CRM…"
-              className={inputClass}
-            />
-            <input name="url" placeholder="https://" className={inputClass} />
+            <PresetFields presets={presets} />
             <input
               name="identity"
               placeholder="Email or username"
@@ -129,8 +126,13 @@ function LoginCard({
   const href = login.url ? safeHref(login.url) : null;
 
   return (
-    <div className="rounded-xl border border-subtle bg-surface p-4">
-      <h3 className="text-[14px] font-bold tracking-tight">{login.service}</h3>
+    <div className="h-full rounded-xl border border-subtle bg-surface px-3.5 py-3">
+      <span className="inline-block rounded border border-subtle px-1.5 py-0.5 text-[10px] font-bold tracking-widest text-ink-muted uppercase">
+        Login
+      </span>
+      <h3 className="mt-2 text-[13.5px] font-bold tracking-tight">
+        {login.service}
+      </h3>
       {login.notes && (
         <p className="mt-0.5 text-[12.5px] text-ink-muted">{login.notes}</p>
       )}
@@ -243,6 +245,63 @@ function Field({
       </dd>
       <CopyButton getValue={async () => value} />
     </div>
+  );
+}
+
+/**
+ * Tool and URL, with a preset picker in front of them.
+ *
+ * The list is learned from every login saved anywhere, so it fills itself instead of
+ * needing a curated seed nobody maintains. Choosing one only fills the fields — it is a
+ * shortcut, not a link, so correcting the URL here never edits anything else.
+ */
+function PresetFields({
+  presets,
+}: {
+  presets: { service: string; url: string | null }[];
+}) {
+  const serviceRef = useRef<HTMLInputElement>(null);
+  const urlRef = useRef<HTMLInputElement>(null);
+
+  return (
+    <>
+      {presets.length > 0 && (
+        <select
+          defaultValue=""
+          aria-label="Add a tool from a preset"
+          onChange={(event) => {
+            const preset = presets.find((p) => p.service === event.target.value);
+            if (!preset) return;
+            if (serviceRef.current) serviceRef.current.value = preset.service;
+            if (urlRef.current) urlRef.current.value = preset.url ?? "";
+            event.target.value = "";
+            serviceRef.current?.focus();
+          }}
+          className={`${inputClass} sm:col-span-2`}
+        >
+          <option value="">Add a tool from a preset…</option>
+          {presets.map((preset) => (
+            <option key={preset.service} value={preset.service}>
+              {preset.service}
+            </option>
+          ))}
+        </select>
+      )}
+
+      <input
+        ref={serviceRef}
+        name="service"
+        required
+        placeholder="Tool — Google account, Close CRM…"
+        className={inputClass}
+      />
+      <input
+        ref={urlRef}
+        name="url"
+        placeholder="https://"
+        className={inputClass}
+      />
+    </>
   );
 }
 

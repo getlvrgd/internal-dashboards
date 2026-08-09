@@ -32,11 +32,13 @@ export function OfferDirectory({
   kind,
   dashboardSlug,
   editable,
+  presets = [],
 }: {
   offers: OfferEntry[];
   kind: "assets" | "logins";
   dashboardSlug: string;
   editable: boolean;
+  presets?: { service: string; url: string | null }[];
 }) {
   if (offers.length === 0) {
     return (
@@ -83,6 +85,7 @@ export function OfferDirectory({
               clientName={offer.name}
               dashboardSlug={dashboardSlug}
               editable={editable}
+              presets={presets}
             />
           )}
         </section>

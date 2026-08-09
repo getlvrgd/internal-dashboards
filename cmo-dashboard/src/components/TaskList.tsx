@@ -1,52 +1,49 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
-
-import { moveTask } from "@/app/actions/tasks";
+import { useState } from "react";
 
 import { AddTaskForm } from "./AddTaskForm";
-import { TaskRow, type RowOption, type TaskRowData } from "./TaskRow";
+import { TaskRow, type RowOption } from "./TaskRow";
+import { useTaskStore } from "./TaskStore";
+import type { BoardTask } from "@/lib/tasks";
 import { EmptyNote } from "./ui";
 
 /**
- * One droppable list of tasks — a day, or the to-do list when `day` is null.
+ * One droppable list of tasks — a day of the week, or the daily list when `day` is
+ * "today".
+ *
+ * The rows come from the shared store rather than props, which is what lets the same
+ * task appear in the daily list and in its day on the week and stay in step: ticking it
+ * in one strikes it through in the other in the same frame, because there is one piece
+ * of state behind both.
  *
  * Drag and drop is plain HTML5 rather than a library. That is what makes dragging
  * *between* lists work without them sharing a React tree: the task id travels in
- * dataTransfer, so the to-do panel and the week panel can sit anywhere in the layout,
- * in any order, and a drop still lands correctly.
+ * dataTransfer, so the panels can sit anywhere in the layout, in any order.
  *
  * The drop index is worked out from which row you are over, not from pointer maths:
- * hovering the top half of a row means "before it", the bottom half means "after it".
- * Dropping on the empty space below the rows appends.
+ * hovering a row means "before it", and dropping past the last one appends.
  */
 export function TaskList({
   tasks,
   day,
-  week,
   clients,
   people,
-  editable,
-  dashboardSlug,
   emptyNote,
   defaultClientId,
   defaultAssigneeId,
 }: {
-  tasks: TaskRowData[];
+  tasks: BoardTask[];
+  /** The day a drop lands on. Null is the unscheduled case. */
   day: number | null;
-  week: string;
   clients: RowOption[];
   people: RowOption[];
-  editable: boolean;
-  dashboardSlug: string;
   emptyNote: string;
   defaultClientId?: string;
   defaultAssigneeId?: string;
 }) {
+  const { canEdit, move } = useTaskStore();
   const [overIndex, setOverIndex] = useState<number | null>(null);
-  const [, startTransition] = useTransition();
-  const router = useRouter();
 
   const drop = (index: number) => (event: React.DragEvent) => {
     event.preventDefault();
@@ -55,13 +52,7 @@ export function TaskList({
 
     const id = event.dataTransfer.getData("text/task-id");
     if (!id) return;
-
-    startTransition(async () => {
-      await moveTask(dashboardSlug, id, day, index, week);
-      // See AddTaskForm: the Router Cache is keyed by the full URL, and this board is
-      // usually being viewed with a ?week= on it.
-      router.refresh();
-    });
+    move(id, day, index);
   };
 
   const allow = (index: number) => (event: React.DragEvent) => {
@@ -76,11 +67,11 @@ export function TaskList({
   return (
     <ul
       className="border-t border-subtle"
-      onDragOver={editable ? allow(tasks.length) : undefined}
-      onDrop={editable ? drop(tasks.length) : undefined}
+      onDragOver={canEdit ? allow(tasks.length) : undefined}
+      onDrop={canEdit ? drop(tasks.length) : undefined}
       onDragLeave={() => setOverIndex(null)}
     >
-      {tasks.length === 0 && !editable && (
+      {tasks.length === 0 && !canEdit && (
         <li className="px-3">
           <EmptyNote>{emptyNote}</EmptyNote>
         </li>
@@ -89,43 +80,43 @@ export function TaskList({
       {tasks.map((task, index) => (
         <li
           key={task.id}
-          draggable={editable}
+          draggable={canEdit}
           onDragStart={(event) => {
             event.dataTransfer.setData("text/task-id", task.id);
             event.dataTransfer.effectAllowed = "move";
           }}
-          onDragOver={editable ? allow(index) : undefined}
-          onDrop={editable ? drop(index) : undefined}
+          onDragOver={canEdit ? allow(index) : undefined}
+          onDrop={canEdit ? drop(index) : undefined}
           className={
-            overIndex === index
-              ? "border-t-2 border-t-accent-edge"
-              : undefined
+            overIndex === index ? "border-t-2 border-t-accent-edge" : undefined
           }
         >
+          {/* TaskRow renders a <div>, never an <li> — the list item is owned here so it
+              can be the drop target, and nesting one inside another is invalid HTML
+              that fails hydration and silently unbinds every handler on the board. */}
           <TaskRow
             task={task}
             clients={clients}
             people={people}
-            editable={editable}
-            dashboardSlug={dashboardSlug}
+            editable={canEdit}
           />
         </li>
       ))}
 
-      {editable && (
+      {canEdit && (
         <li
           className={
-            overIndex === tasks.length ? "border-t-2 border-t-accent-edge" : undefined
+            overIndex === tasks.length
+              ? "border-t-2 border-t-accent-edge"
+              : undefined
           }
         >
           <AddTaskForm
             day={day}
-            week={week}
             clients={clients}
             people={people}
             defaultClientId={defaultClientId}
             defaultAssigneeId={defaultAssigneeId}
-            dashboardSlug={dashboardSlug}
           />
         </li>
       )}

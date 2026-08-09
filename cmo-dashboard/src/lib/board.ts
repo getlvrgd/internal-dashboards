@@ -42,14 +42,14 @@ export type BoardLayout = { panels: Panel[] };
 /**
  * The order a board starts in, and what each panel is called.
  *
- * The to-do list sits above the week deliberately: it is the list of things with no day
- * yet, and burying it under seven day-cards is how it stops being looked at.
+ * The daily list sits above the week deliberately: it is what has to happen today, and
+ * burying it under seven day-cards is how it stops being looked at.
  */
 export const DEFAULT_PANELS: Panel[] = [
   { kind: "progress", title: "Progress", hidden: false },
   { kind: "revenue", title: "Revenue", hidden: false },
   { kind: "kpis", title: "Numbers", hidden: false },
-  { kind: "todo", title: "To-do", hidden: false },
+  { kind: "todo", title: "Today", hidden: false },
   { kind: "week", title: "Weekly actionable tasks", hidden: false },
   { kind: "calls", title: "Calls", hidden: false },
 ];

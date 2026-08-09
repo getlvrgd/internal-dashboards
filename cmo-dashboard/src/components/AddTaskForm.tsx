@@ -1,43 +1,38 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useRef, useTransition } from "react";
+import { useRef } from "react";
 
-import { createTask } from "@/app/actions/tasks";
-
+import { useTaskStore } from "./TaskStore";
 import type { RowOption } from "./TaskRow";
 
 /**
  * The "add a task" line at the foot of each day.
  *
- * A client component only so the form can be cleared and the caret put back after a
- * submit — adding five tasks to a Monday should be five sentences and four Enters, not a
- * click back into the field each time. The write itself is still the server action.
+ * Adding five tasks to a Monday should be five sentences and four Enters, not a click
+ * back into the field each time — so the row clears itself and keeps the caret.
+ *
+ * The row appears immediately: the store adds it locally and tells the server after, so
+ * there is no pause between pressing Enter and seeing the task.
  *
  * Client and person default to whatever the board is filtered by, so filtering to one
  * client and adding three tasks does not mean setting the client three times.
  */
 export function AddTaskForm({
   day,
-  week,
   clients,
   people,
   defaultClientId,
   defaultAssigneeId,
-  dashboardSlug,
 }: {
   day: number | null;
-  week: string;
   clients: RowOption[];
   people: RowOption[];
   defaultClientId?: string;
   defaultAssigneeId?: string;
-  dashboardSlug: string;
 }) {
   const formRef = useRef<HTMLFormElement>(null);
   const titleRef = useRef<HTMLInputElement>(null);
-  const [pending, startTransition] = useTransition();
-  const router = useRouter();
+  const { addTask } = useTaskStore();
 
   return (
     <form
@@ -48,33 +43,21 @@ export function AddTaskForm({
         // task had been swallowed.
         if (!title) return;
 
-        // Cleared optimistically rather than after the await: the row is appended by the
-        // revalidation a moment later, and leaving the text sitting there until then
-        // reads as though the submit did not take. If the write fails, the text is put
-        // back below — losing what someone typed is far worse than a slower clear.
-        formRef.current?.reset();
-
-        startTransition(async () => {
-          const result = await createTask(dashboardSlug, formData);
-
-          if (!result?.ok) {
-            if (titleRef.current) titleRef.current.value = title;
-          } else {
-            // revalidatePath marks the path stale, but the client Router Cache is keyed
-            // by the full URL — and this board is usually being viewed at
-            // /d/<slug>?week=…&client=…. Without an explicit refresh the write lands and
-            // the screen does not change, which reads as the click doing nothing.
-            router.refresh();
-          }
-
-          titleRef.current?.focus();
+        addTask({
+          title,
+          day,
+          clientId: String(formData.get("clientId") ?? ""),
+          assigneeId: String(formData.get("assigneeId") ?? ""),
+          recurring: formData.get("recurring") === "on",
         });
+
+        // Safe to clear straight away: the row is already on screen from the optimistic
+        // add, and if the write fails the board reconciles to the server's version.
+        formRef.current?.reset();
+        titleRef.current?.focus();
       }}
       className="flex flex-wrap items-center gap-1.5 border-t border-subtle px-2 py-1.5"
     >
-      <input type="hidden" name="day" value={day ?? ""} />
-      <input type="hidden" name="week" value={week} />
-
       <span aria-hidden className="grid size-[18px] place-items-center text-ink-muted">
         <svg viewBox="0 0 16 16" className="size-3.5">
           <path
@@ -136,8 +119,7 @@ export function AddTaskForm({
 
       <button
         type="submit"
-        disabled={pending}
-        className="shrink-0 rounded-md px-2 py-1 text-[12px] font-semibold text-ink-secondary transition-colors hover:text-ink disabled:opacity-50"
+        className="shrink-0 rounded-md px-2 py-1 text-[12px] font-semibold text-ink-secondary transition-colors hover:text-ink"
       >
         Add
       </button>

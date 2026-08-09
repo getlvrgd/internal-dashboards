@@ -9,9 +9,11 @@ import { ProgressPanel } from "@/components/ProgressPanel";
 import { RevenuePanel } from "@/components/RevenuePanel";
 import { TaskList } from "@/components/TaskList";
 import type { RowOption } from "@/components/TaskRow";
+import { TaskStoreProvider } from "@/components/TaskStore";
 import { Chip, ghostButtonClass } from "@/components/ui";
 import { resolveDashboard } from "@/lib/access";
 import { parseBoardLayout } from "@/lib/board";
+import { tasksForDay, tasksForToday, type BoardTask } from "@/lib/tasks";
 import { prisma } from "@/lib/db";
 import { daysInMonthUTC, startOfDayUTC, startOfMonthUTC } from "@/lib/money";
 import { DAYS, dayTint, TASK_STATUS } from "@/lib/options";
@@ -145,10 +147,31 @@ export default async function BoardPage({
     label: p.name,
   }));
 
-  const done = weekTasks.filter((t) => t.status === TASK_STATUS.DONE).length;
   const carryable = countCarryable(lastWeekTasks);
   const today = todayIndex(monday);
   const isCurrentWeek = monday.getTime() === thisMonday().getTime();
+
+  // One flat list feeds the store; each panel selects from it. The same row can then
+  // appear in the daily list and in its day on the week without the two drifting apart.
+  const boardTasks: BoardTask[] = [...weekTasks, ...todos].map((task) => ({
+    id: task.id,
+    title: task.title,
+    status: task.status,
+    priority: task.priority,
+    recurring: task.recurring,
+    clientId: task.clientId,
+    assigneeId: task.assigneeId,
+    day: task.day,
+    weekOf: task.weekOf ? weekParam(task.weekOf) : null,
+    position: task.position,
+  }));
+
+  // The progress bar reads the daily list, not the week: this is a daily to-do, and a
+  // percentage of the whole week never moves enough in a day to be worth looking at.
+  const dailyTasks = tasksForToday(boardTasks, today);
+  const dailyDone = dailyTasks.filter(
+    (t) => t.status === TASK_STATUS.DONE,
+  ).length;
 
   /* ------------------------------------------------------------- revenue -- */
 
@@ -253,6 +276,12 @@ export default async function BoardPage({
           </div>
         )}
 
+        <TaskStoreProvider
+          tasks={boardTasks}
+          dashboardSlug={slug}
+          week={week}
+          canEdit={editable}
+        >
         <BoardShell
           initialPanels={layout.panels}
           dashboardSlug={slug}
@@ -260,7 +289,10 @@ export default async function BoardPage({
           slots={{
             progress: (
               <>
-                <ProgressPanel done={done} total={weekTasks.length} />
+                <ProgressPanel
+                  done={dailyDone}
+                  total={dailyTasks.length}
+                />
                 {editable && carryable > 0 && (
                   <form
                     action={carryOverLastWeek.bind(null, slug)}
@@ -304,21 +336,23 @@ export default async function BoardPage({
               <div className="overflow-hidden rounded-xl border border-subtle bg-surface">
                 <div className="flex items-center justify-between gap-2 px-3 py-2">
                   <span className="text-[12px] text-ink-muted">
-                    Not tied to a week
+                    {today === null
+                      ? "Not tied to a week"
+                      : `${DAYS[today]} · also shown in the week`}
                   </span>
                   <span className="text-[12px] text-ink-muted tabular">
-                    {todos.length}
+                    {dailyDone}/{dailyTasks.length}
                   </span>
                 </div>
+                {/* Adding here files the task under today, so it lands in the week too.
+                    Off the current week there is no "today", and a new row falls back to
+                    unscheduled rather than guessing a day. */}
                 <TaskList
-                  tasks={todos}
-                  day={null}
-                  week={week}
+                  tasks={dailyTasks}
+                  day={today}
                   clients={clients}
                   people={peopleOptions}
-                  editable={editable}
-                  dashboardSlug={slug}
-                  emptyNote="Nothing on the list."
+                  emptyNote="Nothing on today."
                   defaultClientId={clientFilter}
                   defaultAssigneeId={personFilter}
                 />
@@ -328,7 +362,7 @@ export default async function BoardPage({
             week: (
               <div className="space-y-3">
                 {DAYS.map((label, day) => {
-                  const rows = weekTasks.filter((task) => task.day === day);
+                  const rows = tasksForDay(boardTasks, day);
                   const isToday = today === day;
 
                   return (
@@ -368,11 +402,8 @@ export default async function BoardPage({
                       <TaskList
                         tasks={rows}
                         day={day}
-                        week={week}
                         clients={clients}
                         people={peopleOptions}
-                        editable={editable}
-                        dashboardSlug={slug}
                         emptyNote="Nothing scheduled."
                         defaultClientId={clientFilter}
                         defaultAssigneeId={personFilter}
@@ -392,6 +423,7 @@ export default async function BoardPage({
             ),
           }}
         />
+        </TaskStoreProvider>
       </main>
     </>
   );

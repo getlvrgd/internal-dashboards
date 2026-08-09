@@ -151,76 +151,6 @@ export async function createTask(
   return { ok: true };
 }
 
-const updateSchema = z.object({
-  id: z.string().min(1),
-  title: z.string().trim().min(1).max(200).optional(),
-  notes: z.string().trim().max(2000).optional(),
-  status: z.enum(ALL_TASK_STATUSES as [string, ...string[]]).optional(),
-  priority: z.enum(ALL_PRIORITIES as [string, ...string[]]).optional(),
-  clientId: optionalId.optional(),
-  assigneeId: optionalId.optional(),
-  day: z
-    .string()
-    .trim()
-    .transform((v) => (v === "" ? null : Number(v)))
-    .nullable()
-    .refine((v) => v === null || (Number.isInteger(v) && v >= 0 && v <= 6))
-    .optional(),
-});
-
-/**
- * One updater for every field, so the row's controls can each post just what they
- * changed. Only keys actually present in the form are written.
- */
-export async function updateTask(dashboardSlug: string, formData: FormData) {
-  const { dashboard } = await requireDashboardWrite(dashboardSlug);
-
-  const raw: Record<string, unknown> = { id: formData.get("id") };
-  for (const key of [
-    "title",
-    "notes",
-    "status",
-    "priority",
-    "clientId",
-    "assigneeId",
-    "day",
-  ]) {
-    if (formData.has(key)) raw[key] = formData.get(key);
-  }
-
-  const parsed = updateSchema.safeParse(raw);
-  if (!parsed.success) return;
-
-  const { id, ...changes } = parsed.data;
-  const task = await ownedTask(id, dashboard.id, {});
-  if (!task) return;
-
-  await prisma.task.update({
-    where: { id: task.id },
-    data: {
-      ...changes,
-      ...(changes.clientId === undefined
-        ? {}
-        : { clientId: await safeClientId(changes.clientId, dashboard.id) }),
-      ...(changes.assigneeId === undefined
-        ? {}
-        : {
-            assigneeId: await safeAssigneeId(changes.assigneeId, dashboard.id),
-          }),
-      // completedAt is derived, never posted: it is set the moment a task turns DONE and
-      // cleared if it is reopened, so "finished this week" needs no separate event log.
-      ...(changes.status === undefined
-        ? {}
-        : {
-            completedAt:
-              changes.status === TASK_STATUS.DONE ? new Date() : null,
-          }),
-    },
-  });
-
-  revalidatePath(`/d/${dashboardSlug}`);
-}
-
 /**
  * The tick box on each row.
  *
@@ -231,58 +161,106 @@ export async function updateTask(dashboardSlug: string, formData: FormData) {
  * Un-ticking returns the task to "not started" rather than to whatever it was before:
  * storing a previous-status column to restore would be a lot of machinery for a case
  * that is almost always a misclick.
+ *
+ * Plain arguments rather than FormData: the board applies every change optimistically
+ * before the round trip, so these are called from a transition in the client rather
+ * than posted by a form.
  */
-export async function toggleDone(dashboardSlug: string, formData: FormData) {
+export async function setTaskDone(
+  dashboardSlug: string,
+  id: string,
+  done: boolean,
+) {
   const { dashboard } = await requireDashboardWrite(dashboardSlug);
 
-  const task = await ownedTask(
-    String(formData.get("id") ?? ""),
-    dashboard.id,
-    { status: true },
-  );
+  const task = await ownedTask(id, dashboard.id, {});
   if (!task) return;
-
-  const done = task.status === TASK_STATUS.DONE;
 
   await prisma.task.update({
     where: { id: task.id },
     data: {
-      status: done ? TASK_STATUS.NOT_STARTED : TASK_STATUS.DONE,
-      completedAt: done ? null : new Date(),
+      status: done ? TASK_STATUS.DONE : TASK_STATUS.NOT_STARTED,
+      completedAt: done ? new Date() : null,
     },
   });
 
   revalidatePath(`/d/${dashboardSlug}`);
 }
 
-export async function toggleRecurring(
+export async function setTaskRecurring(
   dashboardSlug: string,
-  formData: FormData,
+  id: string,
+  recurring: boolean,
 ) {
   const { dashboard } = await requireDashboardWrite(dashboardSlug);
 
-  const task = await ownedTask(String(formData.get("id") ?? ""), dashboard.id, {
-    recurring: true,
-    weekOf: true,
-  });
-  // A to-do has no week to recur into, so the flag is meaningless there.
+  const task = await ownedTask(id, dashboard.id, { weekOf: true });
+  // A task with no week has nothing to recur into, so the flag is meaningless there.
   if (!task || task.weekOf === null) return;
 
   await prisma.task.update({
     where: { id: task.id },
-    data: { recurring: !task.recurring },
+    data: { recurring },
   });
 
   revalidatePath(`/d/${dashboardSlug}`);
 }
 
-export async function deleteTask(dashboardSlug: string, formData: FormData) {
+export async function removeTask(dashboardSlug: string, id: string) {
   const { dashboard } = await requireDashboardWrite(dashboardSlug);
 
-  const task = await ownedTask(String(formData.get("id") ?? ""), dashboard.id, {});
+  const task = await ownedTask(id, dashboard.id, {});
   if (!task) return;
 
   await prisma.task.delete({ where: { id: task.id } });
+  revalidatePath(`/d/${dashboardSlug}`);
+}
+
+/** One field at a time, as the row's controls change them. */
+export async function patchTask(
+  dashboardSlug: string,
+  id: string,
+  patch: {
+    title?: string;
+    status?: string;
+    priority?: string;
+    clientId?: string | null;
+    assigneeId?: string | null;
+  },
+) {
+  const { dashboard } = await requireDashboardWrite(dashboardSlug);
+
+  const task = await ownedTask(id, dashboard.id, {});
+  if (!task) return;
+
+  const data: Record<string, unknown> = {};
+
+  if (patch.title !== undefined) {
+    const title = patch.title.trim().slice(0, 200);
+    if (!title) return;
+    data.title = title;
+  }
+  if (patch.status !== undefined) {
+    if (!ALL_TASK_STATUSES.includes(patch.status)) return;
+    data.status = patch.status;
+    // completedAt is derived, never posted: set the moment a task turns DONE and
+    // cleared if it is reopened, so "finished this week" needs no separate event log.
+    data.completedAt = patch.status === TASK_STATUS.DONE ? new Date() : null;
+  }
+  if (patch.priority !== undefined) {
+    if (!ALL_PRIORITIES.includes(patch.priority)) return;
+    data.priority = patch.priority;
+  }
+  if (patch.clientId !== undefined) {
+    data.clientId = await safeClientId(patch.clientId, dashboard.id);
+  }
+  if (patch.assigneeId !== undefined) {
+    data.assigneeId = await safeAssigneeId(patch.assigneeId, dashboard.id);
+  }
+
+  if (Object.keys(data).length === 0) return;
+
+  await prisma.task.update({ where: { id: task.id }, data });
   revalidatePath(`/d/${dashboardSlug}`);
 }
 

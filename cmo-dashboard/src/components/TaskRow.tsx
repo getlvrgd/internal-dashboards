@@ -1,9 +1,5 @@
-import {
-  deleteTask,
-  toggleDone,
-  toggleRecurring,
-  updateTask,
-} from "@/app/actions/tasks";
+"use client";
+
 import {
   PRIORITIES,
   TASK_STATUS,
@@ -12,8 +8,9 @@ import {
   taskStatusTint,
 } from "@/lib/options";
 
-import { AutoSubmitSelect } from "./AutoSubmitSelect";
 import { InlineText } from "./InlineText";
+import { useTaskStore } from "./TaskStore";
+import type { BoardTask } from "@/lib/tasks";
 import { Dot } from "./ui";
 
 export type TaskRowData = {
@@ -49,14 +46,13 @@ export function TaskRow({
   clients,
   people,
   editable,
-  dashboardSlug,
 }: {
-  task: TaskRowData;
+  task: BoardTask;
   clients: RowOption[];
   people: RowOption[];
   editable: boolean;
-  dashboardSlug: string;
 }) {
+  const { setDone, setRecurring, remove, patch } = useTaskStore();
   const done = task.status === TASK_STATUS.DONE;
   const clientName = clients.find((c) => c.value === task.clientId)?.label;
   const personName = people.find((p) => p.value === task.assigneeId)?.label;
@@ -83,10 +79,10 @@ export function TaskRow({
 
   return (
     <div className="group flex flex-wrap items-center gap-1.5 border-t border-subtle px-2 py-1.5 text-[13px] first:border-t-0 sm:flex-nowrap">
-      <form action={toggleDone.bind(null, dashboardSlug)} className="flex shrink-0 items-center">
-        <input type="hidden" name="id" value={task.id} />
+      <span className="flex shrink-0 items-center">
         <button
-          type="submit"
+          type="button"
+          onClick={() => setDone(task.id, !done)}
           aria-label={done ? `Reopen ${task.title}` : `Mark ${task.title} done`}
           title={done ? "Reopen" : "Mark done"}
           className={`grid size-[18px] place-items-center rounded-md border transition-colors ${
@@ -106,27 +102,23 @@ export function TaskRow({
             />
           </svg>
         </button>
-      </form>
+      </span>
 
-      {/* Every editable field posts together; AutoSubmitSelect and InlineText both
-          submit this form, and updateTask writes only the keys it is given. */}
-      <form
-        action={updateTask.bind(null, dashboardSlug)}
-        className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 sm:flex-nowrap"
-      >
-        <input type="hidden" name="id" value={task.id} />
-
+      {/* Every control writes through the store: local state first, server after, so a
+          click lands in the same frame rather than a round trip later. */}
+      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 sm:flex-nowrap">
         <InlineText
           name="title"
           defaultValue={task.title}
           ariaLabel="Task"
+          onCommit={(value) => patch(task.id, { title: value })}
           className={`flex-1 text-[13px] ${done ? "text-ink-muted line-through" : ""}`}
         />
 
-        <AutoSubmitSelect
-          name="clientId"
+        <select
           value={task.clientId ?? ""}
-          ariaLabel="Client"
+          onChange={(e) => patch(task.id, { clientId: e.target.value || null })}
+          aria-label="Client"
           className={`${selectClass} w-[9rem] shrink-0`}
         >
           <option value="">No client</option>
@@ -135,12 +127,12 @@ export function TaskRow({
               {client.label}
             </option>
           ))}
-        </AutoSubmitSelect>
+        </select>
 
-        <AutoSubmitSelect
-          name="assigneeId"
+        <select
           value={task.assigneeId ?? ""}
-          ariaLabel="Person responsible"
+          onChange={(e) => patch(task.id, { assigneeId: e.target.value || null })}
+          aria-label="Person responsible"
           className={`${selectClass} w-[8rem] shrink-0`}
         >
           <option value="">Unassigned</option>
@@ -149,30 +141,39 @@ export function TaskRow({
               {person.label}
             </option>
           ))}
-        </AutoSubmitSelect>
+        </select>
 
-        <AutoSubmitSelect
-          name="priority"
+        <select
           value={task.priority}
-          ariaLabel="Priority"
-          options={PRIORITIES}
+          onChange={(e) => patch(task.id, { priority: e.target.value })}
+          aria-label="Priority"
           className={`${selectClass} w-[5.5rem] shrink-0`}
-        />
+        >
+          {PRIORITIES.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
 
-        <AutoSubmitSelect
-          name="status"
+        <select
           value={task.status}
-          ariaLabel="Status"
-          options={TASK_STATUSES}
+          onChange={(e) => patch(task.id, { status: e.target.value })}
+          aria-label="Status"
           className={`${selectClass} w-[7rem] shrink-0`}
-        />
-      </form>
+        >
+          {TASK_STATUSES.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </div>
 
       <div className="flex shrink-0 items-center gap-0.5">
-        <form action={toggleRecurring.bind(null, dashboardSlug)}>
-          <input type="hidden" name="id" value={task.id} />
-          <button
-            type="submit"
+        <button
+            type="button"
+            onClick={() => setRecurring(task.id, !task.recurring)}
             title={
               task.recurring
                 ? "Part of the weekly routine — copied into next week"
@@ -206,12 +207,10 @@ export function TaskRow({
               />
             </svg>
           </button>
-        </form>
 
-        <form action={deleteTask.bind(null, dashboardSlug)}>
-          <input type="hidden" name="id" value={task.id} />
-          <button
-            type="submit"
+        <button
+            type="button"
+            onClick={() => remove(task.id)}
             aria-label={`Delete ${task.title}`}
             title="Delete"
             className="grid size-6 place-items-center rounded-md text-ink-muted transition-colors hover:text-critical"
@@ -225,7 +224,6 @@ export function TaskRow({
               />
             </svg>
           </button>
-        </form>
       </div>
     </div>
   );

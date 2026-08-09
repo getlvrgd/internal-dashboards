@@ -11,6 +11,10 @@ import { useRef } from "react";
  *
  * Enter commits and Escape puts the original value back, which is what a field that
  * saves on blur has to offer if it is not going to trap a mistake.
+ *
+ * `onCommit` is how the board uses it: the value goes to the task store, which applies
+ * it locally before telling the server. Without a handler it falls back to submitting
+ * the surrounding form, which is how the client and SOP forms still use it.
  */
 export function InlineText({
   name,
@@ -18,12 +22,14 @@ export function InlineText({
   ariaLabel,
   placeholder,
   className = "",
+  onCommit,
 }: {
   name: string;
   defaultValue: string;
   ariaLabel: string;
   placeholder?: string;
   className?: string;
+  onCommit?: (value: string) => void;
 }) {
   const ref = useRef<HTMLInputElement>(null);
   const committed = useRef(defaultValue);
@@ -40,7 +46,8 @@ export function InlineText({
     }
     if (value === committed.current) return;
     committed.current = value;
-    input.form?.requestSubmit();
+    if (onCommit) onCommit(value);
+    else input.form?.requestSubmit();
   };
 
   return (

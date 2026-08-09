@@ -54,6 +54,8 @@ export const DEFAULT_PANELS: Panel[] = [
   { kind: "todo", title: "Today", hidden: false },
   { kind: "week", title: "Weekly actionable tasks", hidden: false },
   { kind: "calls", title: "Calls", hidden: false },
+  { kind: "assets", title: "Offer assets directory", hidden: false },
+  { kind: "logins", title: "Offer logins directory", hidden: false },
 ];
 
 /**

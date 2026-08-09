@@ -5,6 +5,7 @@ import { BoardShell } from "@/components/BoardShell";
 import { CallsPanel } from "@/components/CallsPanel";
 import { KpiBoard } from "@/components/KpiBoard";
 import { Nav } from "@/components/Nav";
+import { OfferDirectory, type OfferEntry } from "@/components/OfferDirectory";
 import { DailyPanel } from "@/components/DailyPanel";
 import { DailyProgress } from "@/components/DailyProgress";
 import { RevenuePanel } from "@/components/RevenuePanel";
@@ -103,7 +104,13 @@ export default async function BoardPage({
     prisma.client.findMany({
       where: { dashboardId: dashboard.id, status: { not: "CHURNED" } },
       orderBy: [{ position: "asc" }, { name: "asc" }],
-      select: { id: true, name: true, color: true },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        color: true,
+        assetsContent: true,
+      },
     }),
     // Who a task can be assigned to: this dashboard's members, plus the owner and
     // admins, who reach every dashboard without a membership row.
@@ -139,6 +146,37 @@ export default async function BoardPage({
       include: { client: { select: { name: true } } },
     }),
   ]);
+
+  // The directories follow the filter chips: pick an offer and they narrow to it.
+  const filteredOffers = clientFilter
+    ? clientRows.filter((c) => c.id === clientFilter)
+    : clientRows;
+
+  // Only fetched for someone who may open them, and only for the offers on screen.
+  const loginRows = context.canSeeCredentials
+    ? await prisma.credential.findMany({
+        where: { clientId: { in: filteredOffers.map((c) => c.id) } },
+        orderBy: [{ position: "asc" }, { createdAt: "asc" }],
+      })
+    : [];
+
+  const offers: OfferEntry[] = filteredOffers.map((offer) => ({
+    id: offer.id,
+    name: offer.name,
+    slug: offer.slug,
+    color: offer.color,
+    assetsContent: offer.assetsContent,
+    logins: loginRows
+      .filter((l) => l.clientId === offer.id)
+      .map((l) => ({
+        id: l.id,
+        service: l.service,
+        url: l.url,
+        identity: l.identity,
+        notes: l.notes,
+        hasSecret: l.secretCipher !== null,
+      })),
+  }));
 
   const clients: RowOption[] = clientRows.map((c) => ({
     value: c.id,
@@ -387,6 +425,28 @@ export default async function BoardPage({
                 dashboardSlug={slug}
                 editable={editable}
               />
+            ),
+
+            assets: (
+              <OfferDirectory
+                offers={offers}
+                kind="assets"
+                dashboardSlug={slug}
+                editable={editable}
+              />
+            ),
+
+            logins: context.canSeeCredentials ? (
+              <OfferDirectory
+                offers={offers}
+                kind="logins"
+                dashboardSlug={slug}
+                editable={editable}
+              />
+            ) : (
+              <p className="text-[13px] text-ink-muted">
+                Logins are limited to managers of this dashboard.
+              </p>
             ),
           }}
         />

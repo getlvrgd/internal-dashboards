@@ -38,6 +38,11 @@ export type RowOption = { value: string; label: string; color?: string | null };
  * A read-only viewer gets the same row with the controls swapped for plain text — not a
  * disabled version of them, which would be a row full of greyed-out furniture that never
  * does anything.
+ *
+ * The root is a <div>, not an <li>: TaskList owns the list item so it can make it a drop
+ * target. Rendering an <li> here as well produced <li><li>…</li></li>, which is invalid
+ * HTML — React fails hydration on it and discards the whole client tree, which silently
+ * kills every button on the board.
  */
 export function TaskRow({
   task,
@@ -58,7 +63,7 @@ export function TaskRow({
 
   if (!editable) {
     return (
-      <li className="flex items-center gap-2 border-t border-subtle px-2 py-2 text-[13px] first:border-t-0">
+      <div className="flex items-center gap-2 border-t border-subtle px-2 py-2 text-[13px] first:border-t-0">
         <Dot tint={taskStatusTint(task.status)} />
         <span className={`min-w-0 flex-1 truncate ${done ? "text-ink-muted line-through" : ""}`}>
           {task.title}
@@ -72,12 +77,12 @@ export function TaskRow({
         <span className="shrink-0 text-[12px] text-ink-muted">
           {taskStatusLabel(task.status)}
         </span>
-      </li>
+      </div>
     );
   }
 
   return (
-    <li className="group flex flex-wrap items-center gap-1.5 border-t border-subtle px-2 py-1.5 text-[13px] first:border-t-0 sm:flex-nowrap">
+    <div className="group flex flex-wrap items-center gap-1.5 border-t border-subtle px-2 py-1.5 text-[13px] first:border-t-0 sm:flex-nowrap">
       <form action={toggleDone.bind(null, dashboardSlug)} className="flex shrink-0 items-center">
         <input type="hidden" name="id" value={task.id} />
         <button
@@ -222,7 +227,7 @@ export function TaskRow({
           </button>
         </form>
       </div>
-    </li>
+    </div>
   );
 }
 

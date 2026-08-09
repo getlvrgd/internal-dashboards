@@ -37,7 +37,16 @@ export function AddTaskForm({
   return (
     <form
       ref={formRef}
-      action={(formData) => {
+      // onSubmit rather than the `action` prop on purpose. React runs a form action
+      // inside a transition, which makes the store's state update transition-priority —
+      // and React then holds it behind the RSC refetch that follows, so the new row did
+      // not appear until the server answered. Measured at 1280ms on a 600ms link. A
+      // plain submit handler is an urgent update and renders in the next frame.
+      onSubmit={(event) => {
+        event.preventDefault();
+        const form = event.currentTarget;
+        const formData = new FormData(form);
+
         const title = String(formData.get("title") ?? "").trim();
         // Nothing to do, and submitting anyway would clear the row and look like a
         // task had been swallowed.
@@ -51,9 +60,9 @@ export function AddTaskForm({
           recurring: formData.get("recurring") === "on",
         });
 
-        // Safe to clear straight away: the row is already on screen from the optimistic
-        // add, and if the write fails the board reconciles to the server's version.
-        formRef.current?.reset();
+        // Safe to clear straight away: the row is already on screen from the local add,
+        // and if the write fails the board reconciles to the server's version.
+        form.reset();
         titleRef.current?.focus();
       }}
       className="flex flex-wrap items-center gap-1.5 border-t border-subtle px-2 py-1.5"

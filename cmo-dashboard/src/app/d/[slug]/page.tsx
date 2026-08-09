@@ -5,7 +5,8 @@ import { BoardShell } from "@/components/BoardShell";
 import { CallsPanel } from "@/components/CallsPanel";
 import { KpiBoard } from "@/components/KpiBoard";
 import { Nav } from "@/components/Nav";
-import { ProgressPanel } from "@/components/ProgressPanel";
+import { DailyPanel } from "@/components/DailyPanel";
+import { DailyProgress } from "@/components/DailyProgress";
 import { RevenuePanel } from "@/components/RevenuePanel";
 import { TaskList } from "@/components/TaskList";
 import type { RowOption } from "@/components/TaskRow";
@@ -13,10 +14,10 @@ import { TaskStoreProvider } from "@/components/TaskStore";
 import { Chip, ghostButtonClass } from "@/components/ui";
 import { resolveDashboard } from "@/lib/access";
 import { parseBoardLayout } from "@/lib/board";
-import { tasksForDay, tasksForToday, type BoardTask } from "@/lib/tasks";
+import { type BoardTask } from "@/lib/tasks";
 import { prisma } from "@/lib/db";
 import { daysInMonthUTC, startOfDayUTC, startOfMonthUTC } from "@/lib/money";
-import { DAYS, dayTint, TASK_STATUS } from "@/lib/options";
+import { DAYS, dayTint } from "@/lib/options";
 import {
   addWeeks,
   countCarryable,
@@ -166,13 +167,6 @@ export default async function BoardPage({
     position: task.position,
   }));
 
-  // The progress bar reads the daily list, not the week: this is a daily to-do, and a
-  // percentage of the whole week never moves enough in a day to be worth looking at.
-  const dailyTasks = tasksForToday(boardTasks, today);
-  const dailyDone = dailyTasks.filter(
-    (t) => t.status === TASK_STATUS.DONE,
-  ).length;
-
   /* ------------------------------------------------------------- revenue -- */
 
   const monthDays = new Array<number>(daysInMonthUTC(now)).fill(0);
@@ -289,10 +283,7 @@ export default async function BoardPage({
           slots={{
             progress: (
               <>
-                <ProgressPanel
-                  done={dailyDone}
-                  total={dailyTasks.length}
-                />
+                <DailyProgress today={today} />
                 {editable && carryable > 0 && (
                   <form
                     action={carryOverLastWeek.bind(null, slug)}
@@ -333,36 +324,18 @@ export default async function BoardPage({
             kpis: <KpiBoard kpis={kpis} editable={editable} dashboardSlug={slug} />,
 
             todo: (
-              <div className="overflow-hidden rounded-xl border border-subtle bg-surface">
-                <div className="flex items-center justify-between gap-2 px-3 py-2">
-                  <span className="text-[12px] text-ink-muted">
-                    {today === null
-                      ? "Not tied to a week"
-                      : `${DAYS[today]} · also shown in the week`}
-                  </span>
-                  <span className="text-[12px] text-ink-muted tabular">
-                    {dailyDone}/{dailyTasks.length}
-                  </span>
-                </div>
-                {/* Adding here files the task under today, so it lands in the week too.
-                    Off the current week there is no "today", and a new row falls back to
-                    unscheduled rather than guessing a day. */}
-                <TaskList
-                  tasks={dailyTasks}
-                  day={today}
-                  clients={clients}
-                  people={peopleOptions}
-                  emptyNote="Nothing on today."
-                  defaultClientId={clientFilter}
-                  defaultAssigneeId={personFilter}
-                />
-              </div>
+              <DailyPanel
+                today={today}
+                clients={clients}
+                people={peopleOptions}
+                defaultClientId={clientFilter}
+                defaultAssigneeId={personFilter}
+              />
             ),
 
             week: (
               <div className="space-y-3">
                 {DAYS.map((label, day) => {
-                  const rows = tasksForDay(boardTasks, day);
                   const isToday = today === day;
 
                   return (
@@ -388,20 +361,11 @@ export default async function BoardPage({
                             </span>
                           )}
                         </div>
-                        {rows.length > 0 && (
-                          <span className="text-[12px] text-ink-muted tabular">
-                            {
-                              rows.filter((t) => t.status === TASK_STATUS.DONE)
-                                .length
-                            }
-                            /{rows.length}
-                          </span>
-                        )}
+
                       </div>
 
                       <TaskList
-                        tasks={rows}
-                        day={day}
+                        scope={{ kind: "day", day }}
                         clients={clients}
                         people={peopleOptions}
                         emptyNote="Nothing scheduled."

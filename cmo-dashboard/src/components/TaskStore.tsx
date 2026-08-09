@@ -5,8 +5,7 @@ import {
   createContext,
   useCallback,
   useContext,
-  useOptimistic,
-  useTransition,
+  useState,
   type ReactNode,
 } from "react";
 
@@ -36,10 +35,15 @@ import type { BoardTask } from "@/lib/tasks";
  *      watching a tick land three beats after you clicked it makes the whole board feel
  *      broken.
  *
- * useOptimistic is what makes that safe: the local change lives only for the duration of
- * the transition, and when the server's version of the board arrives it replaces it. A
- * write that fails therefore corrects itself on the next render rather than leaving the
- * screen quietly disagreeing with the database.
+ * This deliberately does NOT use useOptimistic. That hook only commits its change once
+ * React runs the surrounding action, which measured at a full round trip — 1286ms
+ * against a 600ms link — so on a real connection the board still waited for the server
+ * and the whole point was lost. Plain state set outside a transition is urgent: React
+ * renders it in the next frame, whatever the network is doing.
+ *
+ * The server stays authoritative. Whenever a new list arrives as props it replaces the
+ * local one wholesale, so a write that failed corrects itself on the next render rather
+ * than leaving the screen quietly disagreeing with the database.
  */
 
 type Action =
@@ -124,26 +128,38 @@ export function TaskStoreProvider({
   canEdit: boolean;
   children: ReactNode;
 }) {
-  const [optimistic, apply] = useOptimistic(tasks, reduce);
-  const [, startTransition] = useTransition();
   const router = useRouter();
+  const [local, setLocal] = useState(tasks);
+  const [serverSnapshot, setServerSnapshot] = useState(tasks);
 
-  // revalidatePath marks the path stale, but the client Router Cache is keyed by the
-  // full URL and the board is normally viewed at /d/<slug>?week=…. Without this the
-  // optimistic value would be the only thing that ever changed.
+  // Re-sync during render rather than in an effect: when the server sends a new list it
+  // becomes the truth immediately, with no frame in between showing the stale one.
+  if (tasks !== serverSnapshot) {
+    setServerSnapshot(tasks);
+    setLocal(tasks);
+  }
+
   const run = useCallback(
-    (optimisticAction: Action, serverCall: () => Promise<unknown>) => {
-      startTransition(async () => {
-        apply(optimisticAction);
-        await serverCall();
-        router.refresh();
-      });
+    (action: Action, serverCall: () => Promise<unknown>) => {
+      // Urgent, so the row is on screen in the next frame.
+      setLocal((current) => reduce(current, action));
+
+      // Then tell the server, and pull its version back. revalidatePath alone is not
+      // enough here: the Router Cache is keyed by the full URL and the board is normally
+      // viewed at /d/<slug>?week=…, so the refresh is what makes the reconciliation land.
+      void (async () => {
+        try {
+          await serverCall();
+        } finally {
+          router.refresh();
+        }
+      })();
     },
-    [apply, router],
+    [router],
   );
 
   const value: StoreValue = {
-    tasks: optimistic,
+    tasks: local,
     canEdit,
     dashboardSlug,
     week,

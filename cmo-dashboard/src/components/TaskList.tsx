@@ -2,10 +2,11 @@
 
 import { useState } from "react";
 
+import { tasksForDay, tasksForToday } from "@/lib/tasks";
+
 import { AddTaskForm } from "./AddTaskForm";
 import { TaskRow, type RowOption } from "./TaskRow";
 import { useTaskStore } from "./TaskStore";
-import type { BoardTask } from "@/lib/tasks";
 import { EmptyNote } from "./ui";
 
 /**
@@ -25,25 +26,38 @@ import { EmptyNote } from "./ui";
  * hovering a row means "before it", and dropping past the last one appends.
  */
 export function TaskList({
-  tasks,
-  day,
+  scope,
   clients,
   people,
   emptyNote,
   defaultClientId,
   defaultAssigneeId,
 }: {
-  tasks: BoardTask[];
-  /** The day a drop lands on. Null is the unscheduled case. */
-  day: number | null;
+  /**
+   * Which slice of the board this list shows. Rows are derived here rather than passed
+   * in: a list fed by a server-computed prop can only change when the server answers,
+   * which is exactly what made every click wait a round trip.
+   */
+  scope:
+    | { kind: "day"; day: number }
+    | { kind: "today"; today: number | null };
   clients: RowOption[];
   people: RowOption[];
   emptyNote: string;
   defaultClientId?: string;
   defaultAssigneeId?: string;
 }) {
-  const { canEdit, move } = useTaskStore();
+  const { canEdit, move, tasks: allTasks } = useTaskStore();
   const [overIndex, setOverIndex] = useState<number | null>(null);
+
+  const tasks =
+    scope.kind === "day"
+      ? tasksForDay(allTasks, scope.day)
+      : tasksForToday(allTasks, scope.today);
+
+  // Where a drop lands. The daily list files under today; off the current week there is
+  // no today, so a drop there leaves the task unscheduled rather than guessing a day.
+  const day = scope.kind === "day" ? scope.day : scope.today;
 
   const drop = (index: number) => (event: React.DragEvent) => {
     event.preventDefault();

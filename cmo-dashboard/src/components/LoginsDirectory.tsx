@@ -41,6 +41,7 @@ export function LoginsDirectory({
   dashboardSlug,
   editable,
   presets = [],
+  offers = [],
 }: {
   logins: LoginRow[];
   clientId: string;
@@ -49,12 +50,25 @@ export function LoginsDirectory({
   editable: boolean;
   /** Tools remembered from what has been saved before, anywhere. */
   presets?: { service: string; url: string | null }[];
+  /**
+   * Every offer a login could be filed against. The add form defaults to the one being
+   * looked at, so the common case is untouched, but a login typed on the wrong screen
+   * can be put where it belongs without starting again.
+   */
+  offers?: { id: string; name: string }[];
 }) {
   return (
     <div>
       {logins.length === 0 ? (
         <EmptyNote>No logins saved for {clientName}.</EmptyNote>
       ) : (
+        <p className="mb-2 text-[12px] text-ink-muted">
+          {logins.length} {logins.length === 1 ? "login" : "logins"} for{" "}
+          <span className="font-semibold text-ink-secondary">{clientName}</span>
+        </p>
+      )}
+
+      {logins.length > 0 && (
         <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
           {logins.map((login) => (
             <LoginCard
@@ -67,18 +81,41 @@ export function LoginsDirectory({
         </div>
       )}
 
+
       {editable && (
         <details className="group mt-3">
           <summary className="inline-flex cursor-pointer list-none items-center gap-1 text-[13px] font-semibold text-ink-muted transition-colors hover:text-ink">
             <span className="transition-transform group-open:rotate-90">›</span>
-            Add a tool
+            Add new login
           </summary>
 
           <form
             action={createCredential.bind(null, dashboardSlug)}
             className="mt-3 grid gap-2 rounded-xl border border-subtle bg-surface p-3 sm:grid-cols-2"
           >
-            <input type="hidden" name="clientId" value={clientId} />
+            {/* Which offer this login belongs to. Every offer has different accounts,
+                so filing it correctly is what makes the panel on that offer's page
+                complete. Defaults to the offer being looked at. */}
+            {offers.length > 1 ? (
+              <label className="block sm:col-span-2">
+                <span className="text-[10px] font-bold tracking-widest text-ink-muted uppercase">
+                  Offer
+                </span>
+                <select
+                  name="clientId"
+                  defaultValue={clientId}
+                  className={`${inputClass} mt-1 w-full`}
+                >
+                  {offers.map((offer) => (
+                    <option key={offer.id} value={offer.id}>
+                      {offer.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : (
+              <input type="hidden" name="clientId" value={clientId} />
+            )}
             <PresetFields presets={presets} />
             <input
               name="identity"
@@ -99,7 +136,7 @@ export function LoginsDirectory({
             />
             <div className="sm:col-span-2">
               <button type="submit" className={primaryButtonClass}>
-                Save tool
+                Save login
               </button>
             </div>
           </form>
@@ -268,7 +305,7 @@ function PresetFields({
       {presets.length > 0 && (
         <select
           defaultValue=""
-          aria-label="Add a tool from a preset"
+          aria-label="Start from a saved tool"
           onChange={(event) => {
             const preset = presets.find((p) => p.service === event.target.value);
             if (!preset) return;
@@ -279,7 +316,7 @@ function PresetFields({
           }}
           className={`${inputClass} sm:col-span-2`}
         >
-          <option value="">Add a tool from a preset…</option>
+          <option value="">Start from a saved tool…</option>
           {presets.map((preset) => (
             <option key={preset.service} value={preset.service}>
               {preset.service}

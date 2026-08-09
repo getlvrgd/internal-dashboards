@@ -270,6 +270,7 @@ export default async function ClientPage({
                   dashboardSlug={slug}
                   editable={editable}
                   presets={presets}
+                  offers={siblings.map((o) => ({ id: o.id, name: o.name }))}
                 />
               ) : (
                 <p className="text-[13px] text-ink-muted">

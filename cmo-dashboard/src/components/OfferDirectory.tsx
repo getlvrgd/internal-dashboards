@@ -87,6 +87,7 @@ export function OfferDirectory({
               dashboardSlug={dashboardSlug}
               editable={editable}
               presets={presets}
+              offers={offers.map((o) => ({ id: o.id, name: o.name }))}
             />
           )}
         </section>

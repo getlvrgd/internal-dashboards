@@ -21,7 +21,7 @@ export default async function ClientsPage({
   const { slug } = await params;
   const context = await resolveDashboard(slug);
   const { dashboard, session } = context;
-  const editable = context.canEdit;
+  const editable = context.canManage;
 
   const clients = await prisma.client.findMany({
     where: { dashboardId: dashboard.id },

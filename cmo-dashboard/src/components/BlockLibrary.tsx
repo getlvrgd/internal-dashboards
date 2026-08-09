@@ -35,12 +35,19 @@ export function BlockLibrary({
   content: initial,
   save: saveContent,
   canEdit,
+  canDelete = true,
   emptyNote = "Nothing here yet.",
 }: {
   content: SopContent;
   /** A bound server action. Takes the whole document as JSON. */
   save: (json: string) => Promise<{ ok?: true; error?: string }>;
   canEdit: boolean;
+  /**
+   * Whether removing a page or a block is offered. A contributor may add procedures but
+   * never lose one — the server enforces the same rule on save, so hiding the buttons
+   * is only there to stop someone building an edit that will be refused.
+   */
+  canDelete?: boolean;
   emptyNote?: string;
 }) {
   const [content, setContent] = useState<SopContent>(initial);
@@ -161,6 +168,7 @@ export function BlockLibrary({
               key={page.id}
               page={page}
               editing={editing}
+              canDelete={canDelete}
               onChange={(next) =>
                 mapPages((p) => p.map((x, i) => (i === pageIndex ? next : x)))
               }
@@ -190,6 +198,7 @@ function move<T>(list: T[], index: number, delta: number): T[] {
 function PageView({
   page,
   editing,
+  canDelete,
   onChange,
   onRemove,
   onMove,
@@ -198,6 +207,7 @@ function PageView({
 }: {
   page: SopPage;
   editing: boolean;
+  canDelete: boolean;
   onChange: (next: SopPage) => void;
   onRemove: () => void;
   onMove: (delta: number) => void;
@@ -270,20 +280,22 @@ function PageView({
             <IconButton label="Move down" onClick={() => onMove(1)} disabled={last}>
               ↓
             </IconButton>
-            <button
-              onClick={() => {
-                if (
-                  window.confirm(
-                    `Delete “${page.title}” and everything on it?`,
-                  )
-                ) {
-                  onRemove();
-                }
-              }}
-              className="text-[12px] font-semibold text-critical underline-offset-2 hover:underline"
-            >
-              Delete
-            </button>
+            {canDelete && (
+              <button
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      `Delete “${page.title}” and everything on it?`,
+                    )
+                  ) {
+                    onRemove();
+                  }
+                }}
+                className="text-[12px] font-semibold text-critical underline-offset-2 hover:underline"
+              >
+                Delete
+              </button>
+            )}
           </span>
         )}
       </header>
@@ -306,6 +318,7 @@ function PageView({
             key={block.id}
             block={block}
             editing={editing}
+            canDelete={canDelete}
             onChange={(next) =>
               setBlocks(page.blocks.map((b, i) => (i === blockIndex ? next : b)))
             }
@@ -339,6 +352,7 @@ function PageView({
 function BlockView({
   block,
   editing,
+  canDelete,
   onChange,
   onRemove,
   onMove,
@@ -347,6 +361,7 @@ function BlockView({
 }: {
   block: SopBlock;
   editing: boolean;
+  canDelete: boolean;
   onChange: (next: SopBlock) => void;
   onRemove: () => void;
   onMove: (delta: number) => void;
@@ -373,13 +388,15 @@ function BlockView({
           <IconButton label="Move down" onClick={() => onMove(1)} disabled={last}>
             ↓
           </IconButton>
-          <button
-            onClick={onRemove}
-            aria-label="Delete entry"
-            className="text-[12px] font-semibold text-critical underline-offset-2 hover:underline"
-          >
-            ✕
-          </button>
+          {canDelete && (
+            <button
+              onClick={onRemove}
+              aria-label="Delete entry"
+              className="text-[12px] font-semibold text-critical underline-offset-2 hover:underline"
+            >
+              ✕
+            </button>
+          )}
         </div>
 
         <div className="grid gap-2 sm:grid-cols-2">

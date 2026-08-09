@@ -3,8 +3,8 @@
 import { revalidatePath } from "next/cache";
 
 import {
+  requireDashboardContribute,
   requireDashboardEditor,
-  requireDashboardManager,
   resolveClient,
 } from "@/lib/access";
 import { prisma } from "@/lib/db";
@@ -23,7 +23,8 @@ import { parseSopContent } from "@/lib/sops";
  * bad save takes the page down for everyone.
  */
 export async function saveSopContent(dashboardSlug: string, raw: string) {
-  const { dashboard } = await requireDashboardManager(dashboardSlug);
+  const context = await requireDashboardContribute(dashboardSlug);
+  const { dashboard } = context;
 
   let parsedJson: unknown;
   try {
@@ -33,6 +34,29 @@ export async function saveSopContent(dashboardSlug: string, raw: string) {
   }
 
   const content = parseSopContent(parsedJson);
+
+  // Members may add procedures but never remove one. The whole document is posted, so
+  // only a diff can tell an addition from a deletion — a page or block that was there
+  // before and is not there now means this save is dropping something, and that is a
+  // manager's decision. Editing wording is fine; losing a procedure is not.
+  if (!context.canManage) {
+    const before = parseSopContent(dashboard.sopContent);
+    const kept = new Set<string>();
+    for (const page of content.pages) {
+      kept.add(page.id);
+      for (const block of page.blocks) kept.add(block.id);
+    }
+    for (const page of before.pages) {
+      if (!kept.has(page.id)) {
+        return { error: "Only a manager can delete from the library." };
+      }
+      for (const block of page.blocks) {
+        if (!kept.has(block.id)) {
+          return { error: "Only a manager can delete from the library." };
+        }
+      }
+    }
+  }
 
   await prisma.dashboard.update({
     where: { id: dashboard.id },
@@ -56,9 +80,10 @@ export async function saveClientAssets(
   clientSlug: string,
   raw: string,
 ) {
+  // Offer assets are manager-only: they are the offer's source of truth, and a member
+  // is on the dashboard to work from them rather than to change them.
+  await requireDashboardEditor(dashboardSlug);
   const { client } = await resolveClient(dashboardSlug, clientSlug);
-  const context = await requireDashboardEditor(dashboardSlug);
-  void context;
 
   let parsedJson: unknown;
   try {

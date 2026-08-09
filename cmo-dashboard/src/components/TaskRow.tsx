@@ -45,22 +45,48 @@ export function TaskRow({
   task,
   clients,
   people,
-  editable,
 }: {
   task: BoardTask;
   clients: RowOption[];
   people: RowOption[];
-  editable: boolean;
 }) {
-  const { setDone, setRecurring, remove, patch } = useTaskStore();
+  const { setDone, setRecurring, remove, patch, canManage, canTick } =
+    useTaskStore();
   const done = task.status === TASK_STATUS.DONE;
   const clientName = clients.find((c) => c.value === task.clientId)?.label;
   const personName = people.find((p) => p.value === task.assigneeId)?.label;
 
-  if (!editable) {
+  if (!canManage) {
     return (
       <div className="flex items-center gap-2 border-t border-subtle px-2 py-2 text-[13px] first:border-t-0">
-        <Dot tint={taskStatusTint(task.status)} />
+        {/* A member gets the tick and nothing else: it is what they are here for, and
+            it is the one control that cannot lose anyone's work. */}
+        {canTick ? (
+          <button
+            type="button"
+            onClick={() => setDone(task.id, !done)}
+            aria-label={done ? `Reopen ${task.title}` : `Mark ${task.title} done`}
+            title={done ? "Reopen" : "Mark done"}
+            className={`grid size-[18px] shrink-0 place-items-center rounded-md border transition-colors ${
+              done
+                ? "border-transparent text-page"
+                : "border-strong text-transparent hover:border-accent"
+            }`}
+            style={done ? { background: "var(--status-good)" } : undefined}
+          >
+            <svg viewBox="0 0 16 16" aria-hidden className="size-3 fill-none">
+              <path
+                d="M3.5 8.5l3 3 6-6.5"
+                stroke="currentColor"
+                strokeWidth="2.2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+        ) : (
+          <Dot tint={taskStatusTint(task.status)} />
+        )}
         <span className={`min-w-0 flex-1 truncate ${done ? "text-ink-muted line-through" : ""}`}>
           {task.title}
         </span>

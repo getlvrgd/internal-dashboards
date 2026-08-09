@@ -90,7 +90,10 @@ function reduce(tasks: BoardTask[], action: Action): BoardTask[] {
 
 type StoreValue = {
   tasks: BoardTask[];
-  canEdit: boolean;
+  /** Full edit: add, reorder, retitle, delete. */
+  canManage: boolean;
+  /** Tick a task off — the one write an ordinary member has. */
+  canTick: boolean;
   dashboardSlug: string;
   week: string;
   addTask: (input: {
@@ -119,13 +122,15 @@ export function TaskStoreProvider({
   tasks,
   dashboardSlug,
   week,
-  canEdit,
+  canManage,
+  canTick,
   children,
 }: {
   tasks: BoardTask[];
   dashboardSlug: string;
   week: string;
-  canEdit: boolean;
+  canManage: boolean;
+  canTick: boolean;
   children: ReactNode;
 }) {
   const router = useRouter();
@@ -160,7 +165,8 @@ export function TaskStoreProvider({
 
   const value: StoreValue = {
     tasks: local,
-    canEdit,
+    canManage,
+    canTick,
     dashboardSlug,
     week,
 

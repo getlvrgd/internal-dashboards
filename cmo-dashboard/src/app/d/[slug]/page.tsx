@@ -56,7 +56,7 @@ export default async function BoardPage({
   const { slug } = await routeParams;
   const context = await resolveDashboard(slug);
   const { dashboard, session } = context;
-  const editable = context.canEdit;
+  const editable = context.canManage;
   const params = await searchParams;
 
   const monday = parseWeekParam(params.week);
@@ -154,7 +154,7 @@ export default async function BoardPage({
 
   // Remembered tools, offered when adding a login. Global, so the list is whatever has
   // ever been saved anywhere rather than a seed nobody maintains.
-  const presets = context.canSeeCredentials
+  const presets = context.canManage
     ? await prisma.loginPreset.findMany({
         orderBy: { service: "asc" },
         select: { service: true, url: true },
@@ -162,7 +162,7 @@ export default async function BoardPage({
     : [];
 
   // Only fetched for someone who may open them, and only for the offers on screen.
-  const loginRows = context.canSeeCredentials
+  const loginRows = context.canManage
     ? await prisma.credential.findMany({
         where: { clientId: { in: filteredOffers.map((c) => c.id) } },
         orderBy: [{ position: "asc" }, { createdAt: "asc" }],
@@ -283,9 +283,10 @@ export default async function BoardPage({
           </div>
         </div>
 
-        {/* Filters are links, not a form: they belong in the URL alongside the week, so
-            "Chris's week" is one address. */}
-        {(clients.length > 0 || peopleOptions.length > 1) && (
+        {/* Offers only. People used to be chips here too, which turned the top of the
+            board into a staff list — the board is about the work, and who is on a task
+            is already on its row. */}
+        {clients.length > 0 && (
           <div className="scroll-x mb-5 flex items-center gap-1.5 pb-1">
             <FilterLink
               href={href({ client: "", person: "" })}
@@ -304,18 +305,6 @@ export default async function BoardPage({
                 {client.label}
               </FilterLink>
             ))}
-            {peopleOptions.length > 1 &&
-              peopleOptions.map((person) => (
-                <FilterLink
-                  key={person.value}
-                  href={href({
-                    person: personFilter === person.value ? "" : person.value,
-                  })}
-                  active={personFilter === person.value}
-                >
-                  {person.label}
-                </FilterLink>
-              ))}
           </div>
         )}
 
@@ -323,7 +312,8 @@ export default async function BoardPage({
           tasks={boardTasks}
           dashboardSlug={slug}
           week={week}
-          canEdit={editable}
+          canManage={editable}
+          canTick={context.canTick}
         >
         <BoardShell
           initialPanels={layout.panels}
@@ -445,7 +435,7 @@ export default async function BoardPage({
               />
             ),
 
-            logins: context.canSeeCredentials ? (
+            logins: context.canManage ? (
               <OfferDirectory
                 offers={offers}
                 kind="logins"
@@ -455,7 +445,7 @@ export default async function BoardPage({
               />
             ) : (
               <p className="text-[13px] text-ink-muted">
-                Logins are limited to managers of this dashboard.
+                Open an offer to see its logins.
               </p>
             ),
           }}

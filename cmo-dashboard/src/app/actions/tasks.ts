@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
-import { requireDashboardWrite } from "@/lib/access";
+import { requireDashboardTick, requireDashboardWrite } from "@/lib/access";
 import { prisma } from "@/lib/db";
 import {
   ALL_PRIORITIES,
@@ -171,7 +171,8 @@ export async function setTaskDone(
   id: string,
   done: boolean,
 ) {
-  const { dashboard } = await requireDashboardWrite(dashboardSlug);
+  // The one write a member has. Everything else on the board is manager-only.
+  const { dashboard } = await requireDashboardTick(dashboardSlug);
 
   const task = await ownedTask(id, dashboard.id, {});
   if (!task) return;

@@ -50,7 +50,8 @@ export default async function SopsPage({
         <BlockLibrary
           content={content}
           save={saveSopContent.bind(null, slug)}
-          canEdit={context.canManage}
+          canEdit={context.canContribute}
+          canDelete={context.canManage}
           emptyNote="Nothing in the library yet."
         />
       </main>

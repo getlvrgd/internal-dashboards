@@ -48,7 +48,7 @@ export default async function ClientPage({
   const { slug, client: clientSlug } = await params;
   const context = await resolveClient(slug, clientSlug);
   const { dashboard, session, client } = context;
-  const editable = context.canEdit;
+  const editable = context.canManage;
 
   const { week: weekParamValue } = await searchParams;
   const monday = parseWeekParam(weekParamValue);
@@ -60,7 +60,7 @@ export default async function ClientPage({
       where: { clientId: client.id },
       orderBy: [{ position: "asc" }, { createdAt: "asc" }],
     }),
-    context.canSeeCredentials
+    context.canUseOfferLogins
       ? prisma.credential.findMany({
           where: { clientId: client.id },
           orderBy: [{ position: "asc" }, { createdAt: "asc" }],
@@ -90,7 +90,7 @@ export default async function ClientPage({
     }),
   ]);
 
-  const presets = context.canSeeCredentials
+  const presets = context.canManage
     ? await prisma.loginPreset.findMany({
         orderBy: { service: "asc" },
         select: { service: true, url: true },
@@ -214,7 +214,8 @@ export default async function ClientPage({
           tasks={boardTasks}
           dashboardSlug={slug}
           week={week}
-          canEdit={editable}
+          canManage={editable}
+          canTick={context.canTick}
         >
           <BoardShell
             initialPanels={layout.panels}
@@ -249,12 +250,12 @@ export default async function ClientPage({
                 <BlockLibrary
                   content={parseSopContent(client.assetsContent)}
                   save={saveClientAssets.bind(null, slug, clientSlug)}
-                  canEdit={editable}
+                  canEdit={context.canManage}
                   emptyNote="No assets filed for this offer yet."
                 />
               ),
 
-              logins: context.canSeeCredentials ? (
+              logins: context.canUseOfferLogins ? (
                 <LoginsDirectory
                   logins={credentials.map((c) => ({
                     id: c.id,
@@ -272,7 +273,7 @@ export default async function ClientPage({
                 />
               ) : (
                 <p className="text-[13px] text-ink-muted">
-                  Logins are limited to managers of this dashboard.
+                  You do not have access to this offer&rsquo;s logins.
                 </p>
               ),
             }}

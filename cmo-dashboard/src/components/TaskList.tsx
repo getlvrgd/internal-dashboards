@@ -47,7 +47,7 @@ export function TaskList({
   defaultClientId?: string;
   defaultAssigneeId?: string;
 }) {
-  const { canEdit, move, tasks: allTasks } = useTaskStore();
+  const { canManage, move, tasks: allTasks } = useTaskStore();
   const [overIndex, setOverIndex] = useState<number | null>(null);
 
   const tasks =
@@ -81,11 +81,11 @@ export function TaskList({
   return (
     <ul
       className="border-t border-subtle"
-      onDragOver={canEdit ? allow(tasks.length) : undefined}
-      onDrop={canEdit ? drop(tasks.length) : undefined}
+      onDragOver={canManage ? allow(tasks.length) : undefined}
+      onDrop={canManage ? drop(tasks.length) : undefined}
       onDragLeave={() => setOverIndex(null)}
     >
-      {tasks.length === 0 && !canEdit && (
+      {tasks.length === 0 && !canManage && (
         <li className="px-3">
           <EmptyNote>{emptyNote}</EmptyNote>
         </li>
@@ -94,13 +94,13 @@ export function TaskList({
       {tasks.map((task, index) => (
         <li
           key={task.id}
-          draggable={canEdit}
+          draggable={canManage}
           onDragStart={(event) => {
             event.dataTransfer.setData("text/task-id", task.id);
             event.dataTransfer.effectAllowed = "move";
           }}
-          onDragOver={canEdit ? allow(index) : undefined}
-          onDrop={canEdit ? drop(index) : undefined}
+          onDragOver={canManage ? allow(index) : undefined}
+          onDrop={canManage ? drop(index) : undefined}
           className={
             overIndex === index ? "border-t-2 border-t-accent-edge" : undefined
           }
@@ -108,16 +108,11 @@ export function TaskList({
           {/* TaskRow renders a <div>, never an <li> — the list item is owned here so it
               can be the drop target, and nesting one inside another is invalid HTML
               that fails hydration and silently unbinds every handler on the board. */}
-          <TaskRow
-            task={task}
-            clients={clients}
-            people={people}
-            editable={canEdit}
-          />
+          <TaskRow task={task} clients={clients} people={people} />
         </li>
       ))}
 
-      {canEdit && (
+      {canManage && (
         <li
           className={
             overIndex === tasks.length

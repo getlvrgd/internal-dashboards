@@ -76,6 +76,7 @@ export function OfferDirectory({
               content={parseSopContent(offer.assetsContent)}
               save={saveClientAssets.bind(null, dashboardSlug, offer.slug)}
               canEdit={editable}
+              canDelete={editable}
               emptyNote={`No assets filed for ${offer.name} yet.`}
             />
           ) : (

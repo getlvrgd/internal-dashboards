@@ -90,12 +90,35 @@ export type DashboardContext = {
   };
   /** MANAGER for owners and admins; otherwise whatever the Membership says. */
   role: string;
-  /** May write to this dashboard. */
-  canEdit: boolean;
-  /** May open a client's logins. */
-  canSeeCredentials: boolean;
-  /** May manage this dashboard's people and settings. */
+  /**
+   * Full edit: create and delete anything on this dashboard, rearrange it, manage its
+   * people. Owners, admins and per-dashboard managers only.
+   *
+   * This is the default for every write. A member is on the dashboard to do the work,
+   * not to reshape it, so anything not explicitly loosened below is closed to them.
+   */
   canManage: boolean;
+  /**
+   * Tick a task off. The one write an ordinary member has — it is the thing they are
+   * here for, and it cannot destroy anything.
+   */
+  canTick: boolean;
+  /**
+   * Add to the SOP library. Members may add procedures but never remove one; the
+   * no-deletions rule is enforced on save in src/app/actions/sops.ts, because a whole
+   * document is posted and only a diff can tell an addition from a deletion.
+   */
+  canContribute: boolean;
+  /** May open logins across the whole dashboard. Managers only. */
+  canSeeCredentials: boolean;
+  /**
+   * May open the logins of one offer, on that offer's own page.
+   *
+   * Deliberately narrower than the above: every offer has different logins, so a member
+   * working on one should reach its accounts without that becoming a list of every
+   * account in the business on the main board.
+   */
+  canUseOfferLogins: boolean;
 };
 
 const DASHBOARD_FIELDS = {
@@ -152,24 +175,51 @@ export async function resolveDashboard(
   // A platform VIEWER is read-only everywhere, whatever their membership says. The
   // stricter of the two answers wins, so a generous grant cannot widen a read-only
   // account.
-  const canEdit = sessionCanEdit(session) && membershipCanEdit(role);
+  const writes = sessionCanEdit(session) && membershipCanEdit(role);
+  const canManage = admin || role === MEMBERSHIP_ROLES.MANAGER;
 
   return {
     session,
     dashboard,
     role,
-    canEdit,
+    canManage,
+    canTick: writes,
+    canContribute: writes,
     canSeeCredentials: membershipCanSeeCredentials(role),
-    canManage: admin || role === MEMBERSHIP_ROLES.MANAGER,
+    canUseOfferLogins: canManage || writes,
   };
 }
 
-/** As resolveDashboard, but a reader gets an error rather than a silent no-op. */
+/**
+ * The default guard for a write.
+ *
+ * Requires managing the dashboard, not merely being on it. Every action starts here and
+ * only the two a member is trusted with — ticking a task, adding an SOP — reach for a
+ * looser guard, so forgetting to think about permissions fails closed.
+ */
 export async function requireDashboardEditor(
   slug: string,
 ): Promise<DashboardContext> {
   const context = await resolveDashboard(slug);
-  if (!context.canEdit) throw new Error("Read-only account.");
+  if (!context.canManage) throw new Error("Not allowed.");
+  return context;
+}
+
+/** Ticking a task off — the one write an ordinary member has. */
+export async function requireDashboardTick(
+  slug: string,
+): Promise<DashboardContext> {
+  const context = await resolveDashboard(slug);
+  if (!context.canTick) throw new Error("Read-only account.");
+  return context;
+}
+
+/** Adding to the SOP library. Deletions are rejected separately, on save. */
+export async function requireDashboardContribute(
+  slug: string,
+): Promise<DashboardContext> {
+  const context = await resolveDashboard(slug);
+  if (!context.canContribute) throw new Error("Read-only account.");
   return context;
 }
 
@@ -182,13 +232,30 @@ export async function requireDashboardManager(
   return context;
 }
 
-/** Opening a stored password. */
+/**
+ * Opening a stored password.
+ *
+ * Members are allowed through because they reach logins on an offer's own page — the
+ * page decides what to show, this decides what may be opened, and a member who can see
+ * a card must be able to use it or the card is furniture.
+ */
 export async function requireVaultAccess(
   slug: string,
 ): Promise<DashboardContext> {
   const context = await resolveDashboard(slug);
-  if (!context.canSeeCredentials) {
-    throw new Error("Logins are limited to managers of this dashboard.");
+  if (!context.canUseOfferLogins) {
+    throw new Error("Logins are limited to people on this dashboard.");
+  }
+  return context;
+}
+
+/** Writing to a login. Reading one is looser; changing it is not. */
+export async function requireVaultWrite(
+  slug: string,
+): Promise<DashboardContext> {
+  const context = await resolveDashboard(slug);
+  if (!context.canManage) {
+    throw new Error("Logins can only be changed by managers.");
   }
   return context;
 }

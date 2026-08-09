@@ -15,7 +15,8 @@ export default async function NewClientPage({
   const { slug } = await params;
   const context = await resolveDashboard(slug);
   const { dashboard, session } = context;
-  if (!context.canEdit) redirect(`/d/${slug}/clients`);
+  // Adding an offer is the owner's call, not a member's.
+  if (!context.canManage) redirect(`/d/${slug}/clients`);
 
   return (
     <>

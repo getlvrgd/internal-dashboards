@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
-import { requireVaultAccess } from "@/lib/access";
+import { requireVaultAccess, requireVaultWrite } from "@/lib/access";
 import { prisma } from "@/lib/db";
 import { open, seal, vaultConfigured } from "@/lib/secrets";
 
@@ -99,7 +99,7 @@ export async function createCredential(
   dashboardSlug: string,
   formData: FormData,
 ) {
-  const { dashboard } = await requireVaultAccess(dashboardSlug);
+  const { dashboard } = await requireVaultWrite(dashboardSlug);
 
   const parsed = readCredential(formData);
   if (!parsed.success) return;
@@ -138,7 +138,7 @@ export async function updateCredential(
   dashboardSlug: string,
   formData: FormData,
 ) {
-  const { dashboard } = await requireVaultAccess(dashboardSlug);
+  const { dashboard } = await requireVaultWrite(dashboardSlug);
 
   const existing = await ownedCredential(
     String(formData.get("id") ?? ""),
@@ -171,7 +171,7 @@ export async function updateCredential(
 
 /** Explicitly empties the password while keeping the row. */
 export async function clearSecret(dashboardSlug: string, formData: FormData) {
-  const { dashboard } = await requireVaultAccess(dashboardSlug);
+  const { dashboard } = await requireVaultWrite(dashboardSlug);
 
   const existing = await ownedCredential(
     String(formData.get("id") ?? ""),
@@ -191,7 +191,7 @@ export async function deleteCredential(
   dashboardSlug: string,
   formData: FormData,
 ) {
-  const { dashboard } = await requireVaultAccess(dashboardSlug);
+  const { dashboard } = await requireVaultWrite(dashboardSlug);
 
   const existing = await ownedCredential(
     String(formData.get("id") ?? ""),

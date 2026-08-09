@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
 
 import { deleteClient } from "@/app/actions/clients";
 import { ClientForm } from "@/components/ClientForm";

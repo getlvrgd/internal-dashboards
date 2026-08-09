@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useRef, useTransition } from "react";
 
 import { createTask } from "@/app/actions/tasks";
@@ -36,17 +37,36 @@ export function AddTaskForm({
   const formRef = useRef<HTMLFormElement>(null);
   const titleRef = useRef<HTMLInputElement>(null);
   const [pending, startTransition] = useTransition();
+  const router = useRouter();
 
   return (
     <form
       ref={formRef}
       action={(formData) => {
+        const title = String(formData.get("title") ?? "").trim();
+        // Nothing to do, and submitting anyway would clear the row and look like a
+        // task had been swallowed.
+        if (!title) return;
+
         // Cleared optimistically rather than after the await: the row is appended by the
         // revalidation a moment later, and leaving the text sitting there until then
-        // reads as though the submit did not take.
+        // reads as though the submit did not take. If the write fails, the text is put
+        // back below — losing what someone typed is far worse than a slower clear.
         formRef.current?.reset();
+
         startTransition(async () => {
-          await createTask(dashboardSlug, formData);
+          const result = await createTask(dashboardSlug, formData);
+
+          if (!result?.ok) {
+            if (titleRef.current) titleRef.current.value = title;
+          } else {
+            // revalidatePath marks the path stale, but the client Router Cache is keyed
+            // by the full URL — and this board is usually being viewed at
+            // /d/<slug>?week=…&client=…. Without an explicit refresh the write lands and
+            // the screen does not change, which reads as the click doing nothing.
+            router.refresh();
+          }
+
           titleRef.current?.focus();
         });
       }}

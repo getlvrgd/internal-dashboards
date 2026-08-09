@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
 import { saveSopContent } from "@/app/actions/sops";
@@ -42,6 +43,7 @@ export function SopLibrary({
   const [dirty, setDirty] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const router = useRouter();
 
   const update = (next: SopContent) => {
     setContent(next);
@@ -61,6 +63,7 @@ export function SopLibrary({
       }
       setDirty(false);
       setEditing(false);
+      router.refresh();
     });
   };
 

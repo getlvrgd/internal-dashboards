@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
 import { moveTask } from "@/app/actions/tasks";
@@ -45,6 +46,7 @@ export function TaskList({
 }) {
   const [overIndex, setOverIndex] = useState<number | null>(null);
   const [, startTransition] = useTransition();
+  const router = useRouter();
 
   const drop = (index: number) => (event: React.DragEvent) => {
     event.preventDefault();
@@ -56,6 +58,9 @@ export function TaskList({
 
     startTransition(async () => {
       await moveTask(dashboardSlug, id, day, index, week);
+      // See AddTaskForm: the Router Cache is keyed by the full URL, and this board is
+      // usually being viewed with a ?week= on it.
+      router.refresh();
     });
   };
 

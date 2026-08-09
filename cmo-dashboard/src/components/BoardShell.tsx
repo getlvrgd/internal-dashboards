@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useState, useTransition, type ReactNode } from "react";
 
 import { saveBoardLayout } from "@/app/actions/board";
@@ -42,6 +43,7 @@ export function BoardShell({
   const [dragging, setDragging] = useState<number | null>(null);
   const [overIndex, setOverIndex] = useState<number | null>(null);
   const [pending, startTransition] = useTransition();
+  const router = useRouter();
 
   const update = (next: Panel[]) => {
     setPanels(next);
@@ -53,6 +55,7 @@ export function BoardShell({
       await saveBoardLayout(dashboardSlug, JSON.stringify({ panels }));
       setDirty(false);
       setEditing(false);
+      router.refresh();
     });
   };
 

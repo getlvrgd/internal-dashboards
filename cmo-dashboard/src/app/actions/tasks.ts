@@ -97,7 +97,12 @@ async function safeAssigneeId(assigneeId: string | null, dashboardId: string) {
   return user?.id ?? null;
 }
 
-export async function createTask(dashboardSlug: string, formData: FormData) {
+export type CreateTaskResult = { ok: boolean };
+
+export async function createTask(
+  dashboardSlug: string,
+  formData: FormData,
+): Promise<CreateTaskResult> {
   const { dashboard } = await requireDashboardWrite(dashboardSlug);
 
   const parsed = createSchema.safeParse({
@@ -109,9 +114,10 @@ export async function createTask(dashboardSlug: string, formData: FormData) {
     priority: formData.get("priority") ?? "NORMAL",
     recurring: formData.get("recurring"),
   });
-  // A blank title is the only realistic failure and the input is `required`; dropping
-  // it silently beats throwing an error page over a stray submit.
-  if (!parsed.success) return;
+  // A blank title is the only realistic failure and the input is `required`. The caller
+  // is told rather than left guessing: AddTaskForm clears the field optimistically, so
+  // a silent failure would look like the task was accepted and then vanished.
+  if (!parsed.success) return { ok: false };
 
   const { title, day, week, clientId, assigneeId, priority, recurring } =
     parsed.data;
@@ -142,6 +148,7 @@ export async function createTask(dashboardSlug: string, formData: FormData) {
   });
 
   revalidatePath(`/d/${dashboardSlug}`);
+  return { ok: true };
 }
 
 const updateSchema = z.object({

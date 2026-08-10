@@ -133,7 +133,7 @@ export async function createTask(
     select: { position: true },
   });
 
-  await prisma.task.create({
+  const created = await prisma.task.create({
     data: {
       dashboardId: dashboard.id,
       title,
@@ -146,6 +146,15 @@ export async function createTask(
       position: (last?.position ?? -1) + 1,
     },
   });
+
+  // A task created as weekly is the first instance of its own series, so every later
+  // week can find it however long the gap.
+  if (created.recurring) {
+    await prisma.task.update({
+      where: { id: created.id },
+      data: { seriesId: created.id },
+    });
+  }
 
   revalidatePath(`/d/${dashboardSlug}`);
   return { ok: true };
@@ -195,14 +204,31 @@ export async function setTaskRecurring(
 ) {
   const { dashboard } = await requireDashboardWrite(dashboardSlug);
 
-  const task = await ownedTask(id, dashboard.id, { weekOf: true });
+  const task = await ownedTask(id, dashboard.id, {
+    weekOf: true,
+    seriesId: true,
+  });
   // A task with no week has nothing to recur into, so the flag is meaningless there.
   if (!task || task.weekOf === null) return;
 
-  await prisma.task.update({
-    where: { id: task.id },
-    data: { recurring },
-  });
+  const series = task.seriesId ?? task.id;
+
+  if (recurring) {
+    // Starting a series: this instance becomes its first, and it will be carried into
+    // every following week from here.
+    await prisma.task.update({
+      where: { id: task.id },
+      data: { recurring: true, seriesId: series },
+    });
+  } else {
+    // Stopping one applies to the whole series. Clearing the flag on a single week's
+    // copy would leave the series alive and the task would reappear next week, which
+    // reads as the switch not working.
+    await prisma.task.updateMany({
+      where: { dashboardId: dashboard.id, seriesId: series },
+      data: { recurring: false },
+    });
+  }
 
   revalidatePath(`/d/${dashboardSlug}`);
 }
@@ -210,8 +236,25 @@ export async function setTaskRecurring(
 export async function removeTask(dashboardSlug: string, id: string) {
   const { dashboard } = await requireDashboardWrite(dashboardSlug);
 
-  const task = await ownedTask(id, dashboard.id, {});
+  const task = await ownedTask(id, dashboard.id, {
+    recurring: true,
+    seriesId: true,
+  });
   if (!task) return;
+
+  // Deleting a standing task ends the series. Removing only this week's copy would let
+  // it return next week, and "unless I delete it" has to mean what it says. Past weeks
+  // keep their instances as history — they just stop being carried forward.
+  if (task.recurring) {
+    await prisma.task.updateMany({
+      where: {
+        dashboardId: dashboard.id,
+        seriesId: task.seriesId ?? task.id,
+        id: { not: task.id },
+      },
+      data: { recurring: false },
+    });
+  }
 
   await prisma.task.delete({ where: { id: task.id } });
   revalidatePath(`/d/${dashboardSlug}`);

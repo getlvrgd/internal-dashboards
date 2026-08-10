@@ -77,29 +77,43 @@ export function todayIndex(monday: Date): number | null {
 /**
  * Materialises a week by cloning the standing routine into it.
  *
- * Called the first time a week is opened. A week that already holds any task is left
- * alone — otherwise reopening it would stack a second copy of the routine on top.
+ * Runs whenever a week is opened, and is safe to call repeatedly: a series already
+ * present in the week is skipped, so nothing stacks up.
  *
  * Only recurring tasks are cloned. Unfinished one-off tasks are deliberately NOT swept
  * forward here: moving someone's rows between weeks behind their back makes last week's
  * board a lie. The UI offers that as one explicit click instead — see carryOver().
  */
 export async function ensureWeek(dashboardId: string, monday: Date) {
-  const existing = await prisma.task.findFirst({
-    where: { dashboardId, weekOf: monday },
-    select: { id: true },
+  // Every standing series, newest instance first. Deliberately not "last week only":
+  // a week nobody opened used to break the chain forever, because the clone had nothing
+  // to copy from and the routine was gone for good.
+  const history = await prisma.task.findMany({
+    where: { dashboardId, recurring: true, weekOf: { lt: monday } },
+    orderBy: [{ weekOf: "desc" }, { position: "asc" }],
   });
-  if (existing) return;
+  if (history.length === 0) return;
 
-  const previous = addWeeks(monday, -1);
-  const routine = await prisma.task.findMany({
-    where: { dashboardId, weekOf: previous, recurring: true },
-    orderBy: [{ day: "asc" }, { position: "asc" }],
+  const latest = new Map<string, (typeof history)[number]>();
+  for (const task of history) {
+    const series = task.seriesId ?? task.id;
+    if (!latest.has(series)) latest.set(series, task);
+  }
+
+  // What this week already has. Checked per series rather than "does the week hold any
+  // task at all" — adding one one-off used to stop the whole routine appearing.
+  const present = await prisma.task.findMany({
+    where: { dashboardId, weekOf: monday },
+    select: { seriesId: true },
   });
-  if (routine.length === 0) return;
+  for (const row of present) {
+    if (row.seriesId) latest.delete(row.seriesId);
+  }
+
+  if (latest.size === 0) return;
 
   await prisma.task.createMany({
-    data: routine.map((task) => ({
+    data: [...latest.values()].map((task) => ({
       dashboardId,
       title: task.title,
       notes: task.notes,
@@ -109,6 +123,7 @@ export async function ensureWeek(dashboardId: string, monday: Date) {
       assigneeId: task.assigneeId,
       priority: task.priority,
       recurring: true,
+      seriesId: task.seriesId ?? task.id,
       position: task.position,
       // A cloned routine task starts fresh — status and completion do not travel.
       status: TASK_STATUS.NOT_STARTED,

@@ -286,6 +286,15 @@ model Task {
   /// into each new week; everything else is carried over only if it is unfinished.
   recurring Boolean @default(false)
 
+  /// Ties every week's copy of a standing task to the same series.
+  ///
+  /// Without it, "has this week already got the Monday review?" could only be answered
+  /// by matching on title, and a renamed task would silently duplicate itself. The
+  /// first instance stores its own id here and every clone carries it forward, so a
+  /// week that was never opened does not break the chain — ensureWeek looks for the
+  /// most recent instance of each series rather than only at last week.
+  seriesId String?
+
   /// Set the moment status becomes DONE, so "finished this week" is answerable without
   /// keeping an event log.
   completedAt DateTime?
@@ -296,6 +305,7 @@ model Task {
   updatedAt DateTime @updatedAt
 
   @@index([dashboardId, weekOf, day])
+  @@index([dashboardId, seriesId])
   @@index([clientId])
   @@index([dashboardId, status])
 }

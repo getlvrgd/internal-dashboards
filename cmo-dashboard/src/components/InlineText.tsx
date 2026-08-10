@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 
 /**
  * A text field that looks like plain text until you touch it, and saves when you leave.
@@ -9,8 +9,13 @@ import { useRef } from "react";
  * line of text — no border, no fill — and only submits when the value actually changed,
  * so tabbing across a board does not fire a write per row.
  *
- * Enter commits and Escape puts the original value back, which is what a field that
- * saves on blur has to offer if it is not going to trap a mistake.
+ * It is a textarea rather than an input because an input cannot wrap: a long task title
+ * scrolled sideways out of view and the only way to read it was to click in and arrow
+ * across. It auto-grows to fit instead, so the whole title is always on screen.
+ *
+ * Enter still commits — a task title is one thing, not a paragraph — and Escape puts the
+ * original value back, which is what a field that saves on blur has to offer if it is
+ * not going to trap a mistake.
  *
  * `onCommit` is how the board uses it: the value goes to the task store, which applies
  * it locally before telling the server. Without a handler it falls back to submitting
@@ -31,45 +36,67 @@ export function InlineText({
   className?: string;
   onCommit?: (value: string) => void;
 }) {
-  const ref = useRef<HTMLInputElement>(null);
+  const ref = useRef<HTMLTextAreaElement>(null);
   const committed = useRef(defaultValue);
 
+  /** Height follows content, so nothing is ever hidden below the fold of the field. */
+  const grow = () => {
+    const el = ref.current;
+    if (!el) return;
+    // Reset first: without it the box can only ever get taller, never shorter.
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  };
+
+  // Once on mount, and again whenever the server sends a different value — a title
+  // edited elsewhere would otherwise keep the old height.
+  useEffect(() => {
+    committed.current = defaultValue;
+    if (ref.current) ref.current.value = defaultValue;
+    grow();
+  }, [defaultValue]);
+
   const commit = () => {
-    const input = ref.current;
-    if (!input) return;
-    const value = input.value.trim();
-    if (value === "" ) {
+    const el = ref.current;
+    if (!el) return;
+    const value = el.value.trim();
+    if (value === "") {
       // A title is required; an emptied field returns to what it was rather than
       // saving a blank row the server would reject anyway.
-      input.value = committed.current;
+      el.value = committed.current;
+      grow();
       return;
     }
     if (value === committed.current) return;
     committed.current = value;
     if (onCommit) onCommit(value);
-    else input.form?.requestSubmit();
+    else el.form?.requestSubmit();
   };
 
   return (
-    <input
+    <textarea
       ref={ref}
       name={name}
+      rows={1}
       defaultValue={defaultValue}
       aria-label={ariaLabel}
       placeholder={placeholder}
+      onInput={grow}
       onBlur={commit}
       onKeyDown={(event) => {
         if (event.key === "Enter") {
+          // A title is a line, not a paragraph, so Enter saves rather than adding one.
           event.preventDefault();
           ref.current?.blur();
         }
         if (event.key === "Escape") {
           event.preventDefault();
           if (ref.current) ref.current.value = committed.current;
+          grow();
           ref.current?.blur();
         }
       }}
-      className={`w-full min-w-0 rounded-md border border-transparent bg-transparent px-1.5 py-1 outline-none hover:border-subtle focus:border-accent focus:bg-surface ${className}`}
+      className={`w-full min-w-0 resize-none overflow-hidden rounded-md border border-transparent bg-transparent px-1.5 py-1 leading-snug outline-none hover:border-subtle focus:border-accent focus:bg-surface ${className}`}
     />
   );
 }

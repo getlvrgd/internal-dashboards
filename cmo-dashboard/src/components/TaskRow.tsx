@@ -58,7 +58,7 @@ export function TaskRow({
 
   if (!canManage) {
     return (
-      <div className="flex items-center gap-2 border-t border-subtle px-2 py-2 text-[13px] first:border-t-0">
+      <div className="flex items-start gap-2 border-t border-subtle px-2 py-2 text-[13px] first:border-t-0">
         {/* A member gets the tick and nothing else: it is what they are here for, and
             it is the one control that cannot lose anyone's work. */}
         {canTick ? (
@@ -87,7 +87,9 @@ export function TaskRow({
         ) : (
           <Dot tint={taskStatusTint(task.status)} />
         )}
-        <span className={`min-w-0 flex-1 truncate ${done ? "text-ink-muted line-through" : ""}`}>
+        <span
+          className={`min-w-0 flex-1 leading-snug ${done ? "text-ink-muted line-through" : ""}`}
+        >
           {task.title}
         </span>
         {clientName && (
@@ -104,8 +106,8 @@ export function TaskRow({
   }
 
   return (
-    <div className="group flex flex-wrap items-center gap-1.5 border-t border-subtle px-2 py-1.5 text-[13px] first:border-t-0 sm:flex-nowrap">
-      <span className="flex shrink-0 items-center">
+    <div className="group flex flex-wrap items-start gap-1.5 border-t border-subtle px-2 py-1.5 text-[13px] first:border-t-0 sm:flex-nowrap">
+      <span className="mt-1 flex shrink-0 items-center">
         <button
           type="button"
           onClick={() => setDone(task.id, !done)}
@@ -132,7 +134,7 @@ export function TaskRow({
 
       {/* Every control writes through the store: local state first, server after, so a
           click lands in the same frame rather than a round trip later. */}
-      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 sm:flex-nowrap">
+      <div className="flex min-w-0 flex-1 flex-wrap items-start gap-1.5 sm:flex-nowrap">
         <InlineText
           name="title"
           defaultValue={task.title}
@@ -196,7 +198,7 @@ export function TaskRow({
         </select>
       </div>
 
-      <div className="flex shrink-0 items-center gap-0.5">
+      <div className="mt-0.5 flex shrink-0 items-center gap-0.5">
         <button
             type="button"
             onClick={() => setRecurring(task.id, !task.recurring)}
